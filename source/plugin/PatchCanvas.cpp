@@ -6,6 +6,7 @@
 #include "Theme.h"
 
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -459,8 +460,17 @@ void PatchCanvas::paint (juce::Graphics& g)
         }
     }
 
+    if (drag == Drag::box && dragMoved)
+    {
+        const auto area = juce::Rectangle<float> (dragStart, toScreen (dragWorld));
+        g.setColour (selected.withAlpha (0.1f));
+        g.fillRect (area);
+        g.setColour (selected.withAlpha (0.8f));
+        g.drawRect (area, 1.0f);
+    }
+
     const auto hint = message.isNotEmpty() ? message
-                                           : juce::String ("Drag empty space to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.");
+                                           : juce::String ("Drag empty space to select, right-drag to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.");
     g.setFont (mono (10.0f));
     auto hintArea = getLocalBounds().reduced (8, 6).removeFromBottom (20).toFloat();
     hintArea = hintArea.withWidth (std::min (hintArea.getWidth(), juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), hint) + 16));
@@ -928,21 +938,15 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
     dragMoved = false;
     drag = Drag::none;
 
-    if (e.mods.isMiddleButtonDown())
+    pressed = hitTest (dragWorld);
+    menuPress = e.mods.isPopupMenu();
+    auto& patch = processor.patch();
+
+    // the middle and right buttons pan from anywhere; a right-click that doesn't move opens a module's menu on release
+    if (e.mods.isMiddleButtonDown() || menuPress)
     {
         drag = Drag::pan;
         panStart = offset;
-        return;
-    }
-
-    pressed = hitTest (dragWorld);
-    auto& patch = processor.patch();
-
-    if (e.mods.isPopupMenu() && pressed.node >= 0)
-    {
-        if (! selection.count (patch.nodes[(size_t) pressed.node].id))
-            selection = { patch.nodes[(size_t) pressed.node].id };
-        showNodeMenu (pressed.node);
         return;
     }
 
@@ -1013,10 +1017,9 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
             break;
         }
         case Hit::none:
-            if (! e.mods.isShiftDown())
-                selection.clear();
-            drag = Drag::pan;
-            panStart = offset;
+            boxBase = e.mods.isShiftDown() ? selection : std::set<std::string> {};
+            selection = boxBase;
+            drag = Drag::box;
             break;
     }
     repaint();
@@ -1052,6 +1055,15 @@ void PatchCanvas::mouseDrag (const juce::MouseEvent& e)
         case Drag::xy:
             applyZone (pressed.node, pressed.zone, dragWorld);
             break;
+        case Drag::box:
+        {
+            const auto area = juce::Rectangle<float> (toWorld (dragStart), dragWorld);
+            selection = boxBase;
+            for (auto& n : patch.nodes)
+                if (onPage (n) && layoutOf (n).box.intersects (area))
+                    selection.insert (n.id);
+            break;
+        }
         case Drag::wire:
         case Drag::none:
             break;
@@ -1088,6 +1100,19 @@ void PatchCanvas::mouseUp (const juce::MouseEvent&)
             edited();
             break;
         case Drag::pan:
+            if (! dragMoved && menuPress && pressed.node >= 0)
+            {
+                const auto& id = processor.patch().nodes[(size_t) pressed.node].id;
+                if (! selection.count (id))
+                    selection = { id };
+                drag = Drag::none;
+                repaint();
+                showNodeMenu (pressed.node);
+                return;
+            }
+            break;
+        case Drag::box:
+            break;
         case Drag::none:
             if (! dragMoved && (pressed.what == Hit::inTag || pressed.what == Hit::outTag))
                 editTag (pressed.node, pressed.what == Hit::outTag, pressed.port);
@@ -1110,11 +1135,11 @@ void PatchCanvas::mouseDoubleClick (const juce::MouseEvent& e)
 
 void PatchCanvas::mouseMove (const juce::MouseEvent& e)
 {
+    lastMouse = e.position;
     const auto hit = hitTest (toWorld (e.position));
-    const bool hand = hit.what == Hit::none;
     const bool point = hit.what == Hit::zone || hit.what == Hit::inPort || hit.what == Hit::outPort || hit.what == Hit::inTag
                        || hit.what == Hit::outTag || hit.what == Hit::wire;
-    setMouseCursor (point ? juce::MouseCursor::PointingHandCursor : hand ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+    setMouseCursor (point ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
 }
 
 void PatchCanvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
@@ -1132,6 +1157,23 @@ void PatchCanvas::mouseMagnify (const juce::MouseEvent& e, float factor) { zoomA
 
 bool PatchCanvas::keyPressed (const juce::KeyPress& key)
 {
+    const auto cmd = [&key] (char c) { return key == juce::KeyPress (c, juce::ModifierKeys::commandModifier, 0); };
+    if (cmd ('c'))
+    {
+        copySelection();
+        return true;
+    }
+    if (cmd ('x'))
+    {
+        copySelection();
+        deleteSelection();
+        return true;
+    }
+    if (cmd ('v'))
+    {
+        pasteClipboard();
+        return true;
+    }
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
     {
         deleteSelection();
@@ -1279,6 +1321,86 @@ void PatchCanvas::deleteSelection()
                        patch.links.end());
     selection.clear();
     showMessage ("Removed " + juce::String ((int) count) + (count == 1 ? " module" : " modules"));
+    edited();
+}
+
+namespace
+{
+    // Shared by every open editor, so modules can be copied from one plugin instance into another.
+    struct Clipboard
+    {
+        std::vector<ps::Node> nodes;
+        std::vector<ps::Link> links; // only the wires between copied modules
+    };
+    Clipboard& clipboard()
+    {
+        static Clipboard c;
+        return c;
+    }
+} // namespace
+
+void PatchCanvas::copySelection()
+{
+    const auto& patch = processor.patch();
+    auto& clip = clipboard();
+    if (selection.empty())
+        return;
+    clip.nodes.clear();
+    clip.links.clear();
+    for (const auto& n : patch.nodes)
+        if (selection.count (n.id))
+            clip.nodes.push_back (n);
+    for (const auto& l : patch.links)
+        if (selection.count (l.a) && selection.count (l.b))
+            clip.links.push_back (l);
+    pasteCount = 0;
+    const auto count = (int) clip.nodes.size();
+    showMessage ("Copied " + juce::String (count) + (count == 1 ? " module" : " modules"));
+}
+
+void PatchCanvas::pasteClipboard()
+{
+    const auto& clip = clipboard();
+    if (clip.nodes.empty())
+        return;
+    auto& patch = processor.patch();
+
+    // Land the copy's top-left corner at the mouse, or a step down and right of the original.
+    juce::Point<float> topLeft { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+    for (const auto& n : clip.nodes)
+        topLeft = { std::min (topLeft.x, (float) n.x), std::min (topLeft.y, (float) n.y) };
+    juce::Point<float> shift;
+    if (isMouseOver())
+        shift = toWorld (lastMouse) - topLeft;
+    else
+    {
+        ++pasteCount;
+        shift = { 30.0f * (float) pasteCount, 30.0f * (float) pasteCount };
+    }
+
+    std::map<std::string, std::string> ids;
+    selection.clear();
+    for (auto n : clip.nodes)
+    {
+        const auto old = n.id;
+        n.id = patch.freshId (n.kind.substr (0, std::min<size_t> (2, n.kind.size())));
+        n.x = std::round (n.x + shift.x);
+        n.y = std::round (n.y + shift.y);
+        n.page = currentPage;
+        n.tagOut.clear(); // each tag has one source, so the copy's outputs start untagged; its inputs keep listening
+        ids[old] = n.id;
+        selection.insert (n.id);
+        patch.nodes.push_back (std::move (n));
+    }
+    for (auto l : clip.links)
+    {
+        l.a = ids[l.a];
+        l.b = ids[l.b];
+        patch.links.push_back (l);
+    }
+    selectedWire = -1;
+    const auto count = (int) clip.nodes.size();
+    showMessage ("Pasted " + juce::String (count) + (count == 1 ? " module" : " modules"));
     edited();
 }
 
