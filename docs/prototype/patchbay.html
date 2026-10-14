@@ -71,7 +71,7 @@ body{font-family:var(--sans);font-size:15px;line-height:1.5}
 .cv.inside{background-color:#13161b;box-shadow:inset 0 0 0 2px #3a414d}
 .world{position:absolute;left:0;top:0;width:3200px;height:2000px;transform-origin:0 0}
 .layer{position:absolute;inset:0;pointer-events:none}
-.cv{cursor:grab;touch-action:none}.cv.panning,.cv.panning *{cursor:grabbing!important}
+.cv{cursor:default;touch-action:none}.cv.panning,.cv.panning *{cursor:grabbing!important}
 .nd,.pop,.selbar,.crumb,.note{cursor:default}
 .tabs{position:absolute;left:160px;right:0;top:44px;height:30px;display:flex;align-items:flex-end;gap:8px;padding:0 8px 0 6px;background:#191c22;border-bottom:1px solid #2f3540;box-sizing:border-box}
 .tlist{display:flex;align-items:flex-end;gap:2px;min-width:0;overflow:hidden}
@@ -320,7 +320,7 @@ body{font-family:var(--sans);font-size:15px;line-height:1.5}
 
   <div class="guide">
     <article><h3>Workspace tabs</h3><p>Tabs above the workspace split a patch into parts. <b>+</b> adds one and a double-click renames it. Drag modules onto a tab, or select some and pick <b>Move to tab</b>. Wires to modules left behind turn into tags, so nothing stops playing. Tags reach across tabs, and a <b>↗</b> marks one that does. Broken Techno has a Patterns tab and a Kit tab.</p></article>
-    <article><h3>Zoom and pan</h3><p>Drag any empty part of the workspace to pan, or scroll and two-finger drag. Pinch or Ctrl-scroll zooms. The middle mouse button pans from anywhere, and clicking the minimap jumps there. <b>Fit</b> frames the whole tab, and <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> work from the keyboard. Each tab keeps its own view.</p></article>
+    <article><h3>Zoom and pan</h3><p>Drag across empty workspace to draw a selection box (hold shift to add to the selection). Right-drag pans, as does the middle button, both from anywhere; scroll and two-finger drag pan too. Pinch or Ctrl-scroll zooms, and clicking the minimap jumps there. <b>Fit</b> frames the whole tab, and <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> work from the keyboard. Each tab keeps its own view.</p></article>
     <article><h3>Drum map</h3><p>A generator modelled on Mutable Instruments Grids. Drag the dot around a map of grooves to morph between them: straighter at the top, more broken at the bottom, sparser on the left, busier on the right. A fill for each of kick, snare and hat sets how many hits play, the brightest hits are accents, and Chaos varies the pattern every loop.</p></article>
     <article><h3>Switch</h3><p>A Switch cycles one input through 2 to 8 outputs (<b>1 → N</b>), or lets 2 to 8 inputs take turns at one output (<b>N → 1</b>). Each trigger at <b>step</b> moves it on one position and <b>rst</b> sends it back to the first. The lit number shows where it is. Switch Study uses both.</p></article>
     <article><h3>Sample player and 8 audio outs</h3><p>A Sample player turns triggers into sound. Each Audio out picks one of the plugin's 8 stereo outs, which show up as separate tracks in your DAW, and meters its own level. Audio cables are thick, with square ports.</p></article>
@@ -328,7 +328,7 @@ body{font-family:var(--sans);font-size:15px;line-height:1.5}
     <article><h3>Tags</h3><p>Click any port to give it a tag. An input with the same tag as an output is connected without a wire, like signal names in Q-SYS Designer. Hover a tag to light up everything on it, or turn on <b>Tag wires</b> to draw the hidden links on the current tab. The tag menu also sets a tag's color.</p></article>
     <article><h3>Text and blocks</h3><p><b>T Text</b> drops a note and <b>▭ Block</b> draws a section, or wraps the selected modules. Drag a block's title to move everything inside it, drag its corner to resize, double-click the title to rename, and click the dot to pick a color.</p></article>
     <article><h3>Presets</h3><p>The preset menu switches between whole patches, tabs included. Five are built in. <b>Save</b> in the menu stores your current patch as your own preset in this browser.</p></article>
-    <article><h3>Subsystems</h3><p>Shift-click modules or shift-drag a box around them, then <b>Save as subsystem</b>. It lands in the library, where you can add it to any preset. <b>Open ▸</b> goes inside one; Snare engine in Broken Techno is an example.</p></article>
+    <article><h3>Subsystems</h3><p>Drag a box around modules or shift-click them, then <b>Save as subsystem</b>. It lands in the library, where you can add it to any preset. <b>Open ▸</b> goes inside one; Snare engine in Broken Techno is an example.</p></article>
     <article><h3>Editing basics</h3><p>Click a library item to add it. Drag an output port onto an input to wire it. Click a wire or select modules and press <kbd>Delete</kbd> to remove them. Every generator has clock and reset inputs, ▾ collapses a module, and ‹ › change values.</p></article>
   </div>
 </div>
@@ -746,12 +746,11 @@ cv.addEventListener('pointerdown',e=>{
   if(e.target.closest('.nd,.bt,.rs,.note,.pop,.selbar,.crumb,.mini')||e.button!==0)return;
   closePop();if(selWire>=0){selWire=-1;drawWires();}selBlock=null;$$('.blk',blkL).forEach(b=>b.classList.remove('sel'));
   if(document.activeElement&&document.activeElement.isContentEditable)document.activeElement.blur();
-  if(!e.shiftKey){e.preventDefault();startPan(e,()=>setSel([]));return;}
-  const s=toW(e),base=new Set(sel);let moved=false;
+  e.preventDefault();const s=toW(e),base=new Set(e.shiftKey?sel:[]);let moved=false;
   const mv=ev=>{const p=toW(ev);if(!moved&&Math.hypot(p.x-s.x,p.y-s.y)>4){moved=true;marq.hidden=false;}if(!moved)return;
     const x=Math.min(s.x,p.x),y=Math.min(s.y,p.y),w=Math.abs(p.x-s.x),h=Math.abs(p.y-s.y);Object.assign(marq.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
     const hits=new Set(base);V.nodes.forEach(n=>{const R=D.get(n.id);if(R&&n.x<x+w&&n.x+nodeW(n)>x&&n.y<y+h&&n.y+R.el.offsetHeight>y)hits.add(n.id)});setSel([...hits]);};
-  const up=()=>{window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);marq.hidden=true;};
+  const up=()=>{window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);marq.hidden=true;if(!moved&&!e.shiftKey)setSel([]);};
   window.addEventListener('pointermove',mv);window.addEventListener('pointerup',up);});
 function updSelBar(){let b=$('.selbar',cv);const n=[...sel].filter(id=>{const m=nodeMap(V)[id];return m&&m.k!=='subin'&&m.k!=='subout'}).length;
   if(sel.size<2){if(b)b.remove();return;}
@@ -949,7 +948,7 @@ function buildView(keepSel){V=stack[stack.length-1].g;if(!V.rt)computeRoutes(V);
   blkL.innerHTML='';noteL.innerHTML='';nodeL.innerHTML='';D.clear();if(!keepSel)sel=new Set();selWire=-1;selBlock=null;closePop();
   vis(V.blocks).forEach(buildBlock);vis(V.notes).forEach(n=>buildNote(n));vis(V.nodes).forEach(buildNode);
   drawWires();updCrumb();setSel([...sel].filter(id=>D.has(id)));drawMini();paintView();renderTabs();
-  cv.classList.toggle('inside',stack.length>1);$('#hint').textContent=stack.length>1?'Inside a subsystem · edits apply to this copy':'Drag empty space to pan · shift-drag to select · Ctrl-scroll or pinch to zoom · drag output → input to wire';}
+  cv.classList.toggle('inside',stack.length>1);$('#hint').textContent=stack.length>1?'Inside a subsystem · edits apply to this copy':'Drag empty space to select · right-drag to pan · Ctrl-scroll or pinch to zoom · drag output → input to wire';}
 function updCrumb(){let c=$('.crumb',cv);if(stack.length<2){if(c)c.remove();return;}
   if(!c){c=document.createElement('div');c.className='crumb';cv.appendChild(c);c.addEventListener('click',e=>{const b=e.target.closest('[data-i]');if(!b)return;stack.length=+b.dataset.i+1;buildView();restoreView();});}
   c.innerHTML=stack.map((s,i)=>i<stack.length-1?`<button type="button" data-i="${i}">${i===0?'◀ ':''}${esc(s.name)}</button><span>›</span>`:`<button type="button" class="cur">${esc(s.name)}</button>`).join('');}
@@ -990,9 +989,10 @@ function startPan(e,onClick){const s=toCv(e),px=PX,py=PY;let moved=false;
   const mv=ev=>{const p=toCv(ev);if(!moved&&Math.hypot(p.x-s.x,p.y-s.y)>3){moved=true;cv.classList.add('panning');closePop();}if(moved){PX=px+p.x-s.x;PY=py+p.y-s.y;applyView();}};
   const up=()=>{window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);cv.classList.remove('panning');if(!moved&&onClick)onClick();};
   window.addEventListener('pointermove',mv);window.addEventListener('pointerup',up);}
-// The middle button pans from anywhere, even over a module. Runs before the other canvas handlers.
-cv.addEventListener('pointerdown',e=>{if(e.button!==1||e.target.closest('.pop,.selbar,.crumb,.mini'))return;e.preventDefault();e.stopPropagation();startPan(e);},true);
+// The right and middle buttons pan from anywhere, even over a module. Runs before the other canvas handlers.
+cv.addEventListener('pointerdown',e=>{if((e.button!==1&&e.button!==2)||e.target.closest('.pop,.selbar,.crumb,.mini'))return;e.preventDefault();e.stopPropagation();startPan(e);},true);
 cv.addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault();});
+cv.addEventListener('contextmenu',e=>{if(!e.target.closest('input,textarea,[contenteditable="true"]'))e.preventDefault();});
 
 /* ---------- workspace tabs ---------- */
 function renderTabs(){if(!ROOT||!ROOT.pages)return;$('#tabs').classList.toggle('inside',stack.length>1);

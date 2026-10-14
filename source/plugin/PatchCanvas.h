@@ -103,7 +103,8 @@ private:
         move,
         wire,
         xy,
-        block
+        block,
+        box // left-drag on empty space draws a selection box
     };
 
     void timerCallback() override;
@@ -152,10 +153,12 @@ private:
     juce::Point<float> dragStart, dragWorld;
     juce::Point<float> panStart;
     bool dragMoved = false;
+    bool menuPress = false; // right-click (or ctrl-click on a Mac): pans when dragged, opens the module menu when not
     HitResult pressed;
     std::vector<std::pair<std::string, juce::Point<float>>> moveStart;
     int dragBlock = -1;
     juce::Point<float> blockStart;
+    std::set<std::string> boxBase; // what was selected before a shift box-drag, kept as the box changes
 
     std::unique_ptr<juce::TextEditor> tagEditor; // made once, shown while a tag is being named
     bool tagEditing = false;

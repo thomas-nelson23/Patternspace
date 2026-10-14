@@ -98,7 +98,7 @@ version don't match, since the app compares its own version with the tag.
 
 ## Using it
 
-- Drag empty space to pan, Ctrl/Cmd-scroll or pinch to zoom, **Fit** to see the whole tab.
+- Drag empty space to box-select modules (shift adds to the selection), right-drag or middle-drag to pan, Ctrl/Cmd-scroll or pinch to zoom, **Fit** to see the whole tab.
 - Click a module in the library to add it to the current tab.
 - Drag from an output to an input to wire it. Click a wire and press Delete to remove it.
 - Click a port to give it a tag. An input with the same tag as an output receives it without a

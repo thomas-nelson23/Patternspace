@@ -459,8 +459,17 @@ void PatchCanvas::paint (juce::Graphics& g)
         }
     }
 
+    if (drag == Drag::box && dragMoved)
+    {
+        const auto area = juce::Rectangle<float> (dragStart, toScreen (dragWorld));
+        g.setColour (selected.withAlpha (0.1f));
+        g.fillRect (area);
+        g.setColour (selected.withAlpha (0.8f));
+        g.drawRect (area, 1.0f);
+    }
+
     const auto hint = message.isNotEmpty() ? message
-                                           : juce::String ("Drag empty space to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.");
+                                           : juce::String ("Drag empty space to select, right-drag to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.");
     g.setFont (mono (10.0f));
     auto hintArea = getLocalBounds().reduced (8, 6).removeFromBottom (20).toFloat();
     hintArea = hintArea.withWidth (std::min (hintArea.getWidth(), juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), hint) + 16));
@@ -928,21 +937,15 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
     dragMoved = false;
     drag = Drag::none;
 
-    if (e.mods.isMiddleButtonDown())
+    pressed = hitTest (dragWorld);
+    menuPress = e.mods.isPopupMenu();
+    auto& patch = processor.patch();
+
+    // the middle and right buttons pan from anywhere; a right-click that doesn't move opens a module's menu on release
+    if (e.mods.isMiddleButtonDown() || menuPress)
     {
         drag = Drag::pan;
         panStart = offset;
-        return;
-    }
-
-    pressed = hitTest (dragWorld);
-    auto& patch = processor.patch();
-
-    if (e.mods.isPopupMenu() && pressed.node >= 0)
-    {
-        if (! selection.count (patch.nodes[(size_t) pressed.node].id))
-            selection = { patch.nodes[(size_t) pressed.node].id };
-        showNodeMenu (pressed.node);
         return;
     }
 
@@ -1013,10 +1016,9 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
             break;
         }
         case Hit::none:
-            if (! e.mods.isShiftDown())
-                selection.clear();
-            drag = Drag::pan;
-            panStart = offset;
+            boxBase = e.mods.isShiftDown() ? selection : std::set<std::string> {};
+            selection = boxBase;
+            drag = Drag::box;
             break;
     }
     repaint();
@@ -1052,6 +1054,15 @@ void PatchCanvas::mouseDrag (const juce::MouseEvent& e)
         case Drag::xy:
             applyZone (pressed.node, pressed.zone, dragWorld);
             break;
+        case Drag::box:
+        {
+            const auto area = juce::Rectangle<float> (toWorld (dragStart), dragWorld);
+            selection = boxBase;
+            for (auto& n : patch.nodes)
+                if (onPage (n) && layoutOf (n).box.intersects (area))
+                    selection.insert (n.id);
+            break;
+        }
         case Drag::wire:
         case Drag::none:
             break;
@@ -1088,6 +1099,19 @@ void PatchCanvas::mouseUp (const juce::MouseEvent&)
             edited();
             break;
         case Drag::pan:
+            if (! dragMoved && menuPress && pressed.node >= 0)
+            {
+                const auto& id = processor.patch().nodes[(size_t) pressed.node].id;
+                if (! selection.count (id))
+                    selection = { id };
+                drag = Drag::none;
+                repaint();
+                showNodeMenu (pressed.node);
+                return;
+            }
+            break;
+        case Drag::box:
+            break;
         case Drag::none:
             if (! dragMoved && (pressed.what == Hit::inTag || pressed.what == Hit::outTag))
                 editTag (pressed.node, pressed.what == Hit::outTag, pressed.port);
@@ -1111,10 +1135,9 @@ void PatchCanvas::mouseDoubleClick (const juce::MouseEvent& e)
 void PatchCanvas::mouseMove (const juce::MouseEvent& e)
 {
     const auto hit = hitTest (toWorld (e.position));
-    const bool hand = hit.what == Hit::none;
     const bool point = hit.what == Hit::zone || hit.what == Hit::inPort || hit.what == Hit::outPort || hit.what == Hit::inTag
                        || hit.what == Hit::outTag || hit.what == Hit::wire;
-    setMouseCursor (point ? juce::MouseCursor::PointingHandCursor : hand ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+    setMouseCursor (point ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
 }
 
 void PatchCanvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
