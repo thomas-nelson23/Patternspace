@@ -1039,6 +1039,19 @@ void PatchCanvas::mouseDrag (const juce::MouseEvent& e)
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
             break;
         case Drag::move:
+            if (pageAtScreen)
+            {
+                auto page = pageAtScreen (e.getScreenPosition());
+                if (page == currentPage)
+                    page.clear();
+                if (page != dropPage)
+                {
+                    dropPage = page;
+                    if (onDropTarget)
+                        onDropTarget (dropPage);
+                }
+            }
+            [[fallthrough]];
         case Drag::block:
             if (drag == Drag::block && dragBlock >= 0 && dragBlock < (int) patch.blocks.size())
             {
@@ -1077,6 +1090,27 @@ void PatchCanvas::mouseUp (const juce::MouseEvent&)
     switch (drag)
     {
         case Drag::move:
+            if (! dropPage.empty())
+            {
+                // put the modules back where they started on this tab, then move them across
+                auto& patch = processor.patch();
+                for (auto& [id, start] : moveStart)
+                    if (auto* n = patch.find (id))
+                    {
+                        n->x = start.x;
+                        n->y = start.y;
+                    }
+                const auto page = dropPage;
+                dropPage.clear();
+                if (onDropTarget)
+                    onDropTarget ({});
+                drag = Drag::none;
+                moveSelectionToPage (page);
+                return;
+            }
+            if (dragMoved)
+                edited();
+            break;
         case Drag::block:
             if (dragMoved)
                 edited();

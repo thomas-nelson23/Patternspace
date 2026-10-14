@@ -211,6 +211,13 @@ public:
         {
             const auto r = rects[i];
             const bool active = pages[i].id == canvas.page();
+            if (pages[i].id == dropTarget)
+            {
+                g.setColour (selected.withAlpha (0.25f));
+                g.fillRoundedRectangle (r.withTrimmedBottom (-4), 5);
+                g.setColour (selected);
+                g.drawRoundedRectangle (r.withTrimmedBottom (-4).reduced (0.5f), 5, 1.0f);
+            }
             if (active)
             {
                 g.setColour (ps::theme::canvas);
@@ -260,7 +267,27 @@ public:
                 startRename ((int) i);
     }
 
+    // The tab under a screen point, so modules dragged on the canvas can be dropped onto it.
+    std::string pageAtScreen (juce::Point<int> screenPos) const
+    {
+        const auto local = getLocalPoint (nullptr, screenPos).toFloat();
+        const auto& pages = processor.patch().pages;
+        const auto rects = tabRects();
+        for (size_t i = 0; i < pages.size(); ++i)
+            if (rects[i].withTrimmedBottom (-4).contains (local))
+                return pages[i].id;
+        return {};
+    }
+
+    void setDropTarget (const std::string& page)
+    {
+        dropTarget = page;
+        repaint();
+    }
+
 private:
+    std::string dropTarget;
+
     int moduleCount (const std::string& page) const
     {
         int count = 0;
@@ -395,6 +422,8 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     canvas.onPagesChanged = [this] { tabs->repaint(); };
     canvas.onEdited = [this] { tabs->repaint(); };
     canvas.onExportSubsystem = [this] (const ps::Node& n) { exportSubsystem (n); };
+    canvas.pageAtScreen = [this] (juce::Point<int> screenPos) { return tabs->pageAtScreen (screenPos); };
+    canvas.onDropTarget = [this] (const std::string& page) { tabs->setDropTarget (page); };
 
     presetBox.setTextWhenNothingSelected ("Patch");
     presetBox.onChange = [this] {

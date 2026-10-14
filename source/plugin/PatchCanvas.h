@@ -53,6 +53,10 @@ public:
     std::function<void()> onEdited;       // after any change to the patch
     std::function<void()> onPagesChanged; // a tab was added, or modules moved between tabs
     std::function<void (const ps::Node&)> onExportSubsystem;
+    // Dragging modules onto a workspace tab moves them there. The editor says which tab, if any, is
+    // under a screen point, and lights the one a drag would drop onto (empty for none).
+    std::function<std::string (juce::Point<int> screenPos)> pageAtScreen;
+    std::function<void (const std::string& pageId)> onDropTarget;
 
 private:
     enum class ZoneType
@@ -158,6 +162,7 @@ private:
     bool menuPress = false; // right-click (or ctrl-click on a Mac): pans when dragged, opens the module menu when not
     HitResult pressed;
     std::vector<std::pair<std::string, juce::Point<float>>> moveStart;
+    std::string dropPage; // the tab a module drag is over, if it is not the current one
     int dragBlock = -1;
     juce::Point<float> blockStart;
     juce::Point<float> lastMouse; // where pasted modules land when the mouse is over the canvas
