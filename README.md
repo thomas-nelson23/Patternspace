@@ -42,7 +42,7 @@ On Linux, install the JUCE dependencies first. On Ubuntu 24.04:
 ```sh
 sudo apt install ninja-build libasound2-dev libjack-jackd2-dev ladspa-sdk libfreetype-dev \
   libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
-  libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev
+  libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev libcurl4-openssl-dev
 ```
 
 For a universal macOS build, add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
@@ -50,6 +50,26 @@ For a universal macOS build, add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 Every push builds all three platforms in GitHub Actions, runs the tests and pluginval, and
 uploads the plug-ins as build artifacts. Those builds aren't signed, so macOS blocks them until you
 run `xattr -dr com.apple.quarantine` on the plug-in.
+
+## Updates and releases
+
+The standalone app has an **Updates** button. It checks the latest
+[GitHub release](https://github.com/thomas-nelson23/Patternspace/releases) once a day at launch
+(untick **Check at launch** in its menu to stop that) and whenever you pick **Check for
+updates...**. When a newer version is out the button turns green and offers to download that
+platform's zip to your Downloads folder. Quit the app and replace it with the one in the zip's
+`Standalone` folder. The plug-ins don't check for updates; reinstall them from the same zip.
+
+To publish a release, bump `VERSION` in `project(Patternspace ...)` in `CMakeLists.txt`, merge it,
+then push a matching tag:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The Build workflow builds all three platforms and publishes the release with
+`Patternspace-<version>-Linux.zip`, `-macOS.zip` and `-Windows.zip`. It stops if the tag and the
+version don't match, since the app compares its own version with the tag.
 
 ## Using it
 

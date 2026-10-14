@@ -86,6 +86,7 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         VST3_CATEGORIES Instrument Drum Sampler
         AU_MAIN_TYPE kAudioUnitType_MusicDevice
         LV2URI "https://github.com/thomas-nelson23/patternspace"
+        NEEDS_CURL TRUE
         COPY_PLUGIN_AFTER_BUILD ${PATTERNSPACE_COPY_PLUGINS})
 
     juce_add_binary_data(PatternspacePresets
@@ -103,12 +104,20 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         source/plugin/Presets.cpp
         source/plugin/Presets.h
         source/plugin/Theme.h
+        source/plugin/Updater.cpp
+        source/plugin/Updater.h
         source/state/PatchJson.cpp
-        source/state/PatchJson.h)
+        source/state/PatchJson.h
+        source/update/UpdateCheck.cpp
+        source/update/UpdateCheck.h)
+
+    # The standalone app's update check reads GitHub releases over HTTPS, which needs curl on Linux.
+    set(PATTERNSPACE_UPDATE_REPO "thomas-nelson23/Patternspace" CACHE STRING "GitHub owner/repo the standalone app checks for releases")
 
     target_compile_definitions(Patternspace PUBLIC
+        PATTERNSPACE_UPDATE_REPO="${PATTERNSPACE_UPDATE_REPO}"
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
+        JUCE_USE_CURL=1
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_DISPLAY_SPLASH_SCREEN=0)
 
@@ -136,7 +145,8 @@ if(PATTERNSPACE_BUILD_TESTS)
     juce_add_console_app(PatternspaceTests PRODUCT_NAME "PatternspaceTests")
     target_sources(PatternspaceTests PRIVATE
         tests/CoreTests.cpp
-        source/state/PatchJson.cpp)
+        source/state/PatchJson.cpp
+        source/update/UpdateCheck.cpp)
     target_compile_definitions(PatternspaceTests PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0

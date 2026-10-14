@@ -431,6 +431,19 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     zoomLabel.setFont (ps::theme::mono (10.5f));
     addAndMakeVisible (zoomLabel);
 
+    if (processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+    {
+        updater = std::make_unique<Updater> (*this);
+        updater->onStateChanged = [this] { refreshUpdateButton(); };
+        updatesButton.onClick = [this] { showUpdatesMenu(); };
+        addAndMakeVisible (updatesButton);
+        refreshUpdateButton();
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<PatternspaceEditor> (this)] {
+            if (safe != nullptr)
+                safe->updater->checkIfDue();
+        });
+    }
+
     processor.addChangeListener (this);
     refreshPresets();
     refreshZoom();
@@ -475,6 +488,8 @@ void PatternspaceEditor::resized()
     openButton.setBounds (top.removeFromLeft (72));
     top.removeFromLeft (4);
     saveButton.setBounds (top.removeFromLeft (72));
+    top.removeFromLeft (4);
+    updatesButton.setBounds (top.removeFromLeft (updater != nullptr && updater->updateAvailable() ? 124 : 80));
 
     syncButton.setBounds (top.removeFromRight (96));
     top.removeFromRight (8);
@@ -590,4 +605,22 @@ void PatternspaceEditor::exportSubsystem (const ps::Node& node)
                               if (! file.replaceWithText (juce::JSON::toString (data, false)))
                                   showError ("Couldn't save", "Patternspace couldn't write " + file.getFullPathName() + ".");
                           });
+}
+
+void PatternspaceEditor::refreshUpdateButton()
+{
+    const bool available = updater->updateAvailable();
+    updatesButton.setButtonText (available ? "Update available" : "Updates");
+    updatesButton.setToggleState (available, juce::dontSendNotification);
+    updatesButton.setTooltip (available ? "A newer Patternspace is out" : "Check for a newer Patternspace");
+    resized();
+}
+
+void PatternspaceEditor::showUpdatesMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Patternspace " + Updater::currentVersion());
+    menu.addItem ("Check for updates...", [this] { updater->checkNow(); });
+    menu.addItem ("Check at launch", true, updater->checksAtLaunch(), [this] { updater->setChecksAtLaunch (! updater->checksAtLaunch()); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&updatesButton));
 }
