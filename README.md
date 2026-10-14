@@ -101,6 +101,7 @@ version don't match, since the app compares its own version with the tag.
 - Drag empty space to box-select modules (shift adds to the selection), right-drag or middle-drag to pan, Ctrl/Cmd-scroll or pinch to zoom, **Fit** to see the whole tab.
 - Click a module in the library to add it to the current tab.
 - Drag from an output to an input to wire it. Click a wire and press Delete to remove it.
+- Ctrl/Cmd-C, X and V copy, cut and paste the selected modules with the wires between them. A paste lands at the mouse; pasted outputs start untagged because each tag has one source.
 - Click a port to give it a tag. An input with the same tag as an output receives it without a
   wire, across tabs too. Wires win over tags.
 - Drag a module by its header. Shift-click to select several. Click the arrow, or double-click

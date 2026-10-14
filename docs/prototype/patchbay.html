@@ -329,7 +329,7 @@ body{font-family:var(--sans);font-size:15px;line-height:1.5}
     <article><h3>Text and blocks</h3><p><b>T Text</b> drops a note and <b>▭ Block</b> draws a section, or wraps the selected modules. Drag a block's title to move everything inside it, drag its corner to resize, double-click the title to rename, and click the dot to pick a color.</p></article>
     <article><h3>Presets</h3><p>The preset menu switches between whole patches, tabs included. Five are built in. <b>Save</b> in the menu stores your current patch as your own preset in this browser.</p></article>
     <article><h3>Subsystems</h3><p>Drag a box around modules or shift-click them, then <b>Save as subsystem</b>. It lands in the library, where you can add it to any preset. <b>Open ▸</b> goes inside one; Snare engine in Broken Techno is an example.</p></article>
-    <article><h3>Editing basics</h3><p>Click a library item to add it. Drag an output port onto an input to wire it. Click a wire or select modules and press <kbd>Delete</kbd> to remove them. Every generator has clock and reset inputs, ▾ collapses a module, and ‹ › change values.</p></article>
+    <article><h3>Editing basics</h3><p>Click a library item to add it. Drag an output port onto an input to wire it. Click a wire or select modules and press <kbd>Delete</kbd> to remove them. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>C</kbd>, <kbd>X</kbd> and <kbd>V</kbd> copy, cut and paste modules with the wires between them; a paste lands at the mouse. Every generator has clock and reset inputs, ▾ collapses a module, and ‹ › change values.</p></article>
   </div>
 </div>
 
@@ -752,6 +752,18 @@ cv.addEventListener('pointerdown',e=>{
     const hits=new Set(base);V.nodes.forEach(n=>{const R=D.get(n.id);if(R&&n.x<x+w&&n.x+nodeW(n)>x&&n.y<y+h&&n.y+R.el.offsetHeight>y)hits.add(n.id)});setSel([...hits]);};
   const up=()=>{window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);marq.hidden=true;if(!moved&&!e.shiftKey)setSel([]);};
   window.addEventListener('pointermove',mv);window.addEventListener('pointerup',up);});
+/* copy and paste: the wires between copied modules come along; pasted outputs start untagged, since each tag has one source */
+let CLIP=null,pasteN=0,mouseCv=null;
+cv.addEventListener('pointermove',e=>{mouseCv=toCv(e);});cv.addEventListener('pointerleave',()=>{mouseCv=null;});
+function copySel(){const ids=new Set([...sel].filter(id=>{const k=nodeMap(V)[id].k;return k!=='subin'&&k!=='subout'}));if(!ids.size)return;
+  CLIP={nodes:clone(V.nodes.filter(n=>ids.has(n.id))),links:V.links.filter(l=>ids.has(l.a)&&ids.has(l.b)).map(l=>({...l}))};pasteN=0;
+  toast(`Copied ${ids.size} module${ids.size>1?'s':''}`);}
+function pasteClip(){const x0=Math.min(...CLIP.nodes.map(n=>n.x)),y0=Math.min(...CLIP.nodes.map(n=>n.y));let dx,dy;
+  if(mouseCv){dx=(mouseCv.x-PX)/Z-x0;dy=(mouseCv.y-PY)/Z-y0;}else{pasteN++;dx=dy=30*pasteN;}
+  const ids={},made=clone(CLIP.nodes).map(n=>{const id=freshId(V,n.k.slice(0,2));ids[n.id]=id;n.id=id;
+    n.x=Math.round(clamp(n.x+dx,0,WW-nodeW(n)));n.y=Math.round(clamp(n.y+dy,0,WH-30));n.tagOut={};delete n.pg;if(n.g)normMidi(n.g);V.nodes.push(stamp(n));return n;});
+  CLIP.links.forEach(l=>V.links.push({a:ids[l.a],p:l.p,b:ids[l.b],q:l.q}));
+  computeRoutes(V);buildView(false);setSel(made.map(n=>n.id));drawMini();renderTabs();dirty();toast(`Pasted ${made.length} module${made.length>1?'s':''}`);}
 function updSelBar(){let b=$('.selbar',cv);const n=[...sel].filter(id=>{const m=nodeMap(V)[id];return m&&m.k!=='subin'&&m.k!=='subout'}).length;
   if(sel.size<2){if(b)b.remove();return;}
   if(!b){b=document.createElement('div');b.className='selbar';cv.appendChild(b);
@@ -764,6 +776,10 @@ document.addEventListener('keydown',e=>{
   const t=e.target;if(t.isContentEditable||/INPUT|TEXTAREA/.test(t.tagName))return;
   if(e.key==='Escape'){closePop();closeModal();closeMenu();setSel([]);return;}
   if(!e.metaKey&&!e.ctrlKey&&!e.altKey){if(e.key==='+'||e.key==='='){zoomStep(1);return;}if(e.key==='-'||e.key==='_'){zoomStep(-1);return;}if(e.key==='0'){zoomAt(1,cvW()/2,cvH()/2);return;}}
+  if((e.metaKey||e.ctrlKey)&&!e.altKey&&!e.shiftKey&&plug.isConnected){const k=e.key.toLowerCase();
+    if(k==='c'&&sel.size){e.preventDefault();copySel();return;}
+    if(k==='x'&&sel.size){e.preventDefault();copySel();delSel();return;}
+    if(k==='v'&&CLIP){e.preventDefault();pasteClip();return;}}
   if(e.key!=='Delete'&&e.key!=='Backspace')return;
   if(!plug.isConnected)return;
   if(selWire>=0){e.preventDefault();V.links.splice(selWire,1);selWire=-1;computeRoutes(V);rebuildAllTags();drawWires();dirty();toast('Wire removed');}
