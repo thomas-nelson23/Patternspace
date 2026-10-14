@@ -297,6 +297,23 @@ void testUpdateCheck()
     checkEq (r.notes, juce::String ("Notes"), "the notes are kept");
     check (ps::update::parseRelease (release, "Windows", r) && r.assetSize == 30, "the Windows zip is picked");
     check (ps::update::parseRelease (release, "Haiku", r) && r.assetUrl.isEmpty(), "no zip for an unknown platform");
+    auto withInstallers = juce::JSON::parse (R"({
+        "tag_name": "v0.3.0", "draft": false, "prerelease": false,
+        "assets": [
+            { "name": "Patternspace-0.3.0-Linux.zip", "browser_download_url": "https://x/linux.zip", "size": 10 },
+            { "name": "patternspace_0.3.0_amd64.deb", "browser_download_url": "https://x/linux.deb", "size": 11 },
+            { "name": "Patternspace-0.3.0-macOS.zip", "browser_download_url": "https://x/mac.zip", "size": 20 },
+            { "name": "Patternspace-0.3.0-macOS.pkg", "browser_download_url": "https://x/mac.pkg", "size": 21 },
+            { "name": "Patternspace-0.3.0-Windows.zip", "browser_download_url": "https://x/win.zip", "size": 30 },
+            { "name": "Patternspace-0.3.0-Windows-Setup.exe", "browser_download_url": "https://x/win.exe", "size": 31 }
+        ] })");
+    check (ps::update::parseRelease (withInstallers, "macOS", r) && r.assetUrl == "https://x/mac.pkg" && r.isInstaller,
+           "the macOS installer wins over the zip");
+    check (ps::update::parseRelease (withInstallers, "Windows", r) && r.assetUrl == "https://x/win.exe" && r.isInstaller,
+           "the Windows installer wins over the zip");
+    check (ps::update::parseRelease (withInstallers, "Linux", r) && r.assetUrl == "https://x/linux.zip" && ! r.isInstaller,
+           "Linux gets the zip");
+    check (ps::update::parseRelease (release, "macOS", r) && ! r.isInstaller, "a release without installers still offers the zip");
     check (! ps::update::parseRelease (juce::JSON::parse (R"({"tag_name":"v1.0.0","prerelease":true})"), "Linux", r),
            "a pre-release is ignored");
     check (! ps::update::parseRelease (juce::JSON::parse (R"({"message":"Not Found"})"), "Linux", r), "a 404 body is rejected");

@@ -5,8 +5,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 // The standalone app's updater. It asks GitHub for the latest release, compares it with this
-// build's version and, if it's newer, offers to download this platform's zip to the Downloads
-// folder and show it there. It never replaces the running app itself.
+// build's version and, if it's newer, offers to download this platform's installer (or its zip,
+// where there is no installer) to the Downloads folder. It never replaces the running app itself:
+// it can open the installer and quit so the installer can.
 class Updater : private juce::URL::DownloadTaskListener
 {
 public:

@@ -40,6 +40,15 @@ juce::String platformName()
 #endif
 }
 
+juce::String installerExtension (const juce::String& platform)
+{
+    if (platform == "macOS")
+        return ".pkg";
+    if (platform == "Windows")
+        return ".exe";
+    return {};
+}
+
 bool parseRelease (const juce::var& json, const juce::String& platform, Release& out)
 {
     if (! json.isObject() || (bool) json["draft"] || (bool) json["prerelease"])
@@ -55,18 +64,26 @@ bool parseRelease (const juce::var& json, const juce::String& platform, Release&
     out.pageUrl = json["html_url"].toString();
     out.notes = json["body"].toString().trim();
 
-    if (auto* assets = json["assets"].getArray())
-        for (auto& asset : *assets)
-        {
-            const auto name = asset["name"].toString();
-            if (name.endsWithIgnoreCase (".zip") && name.containsIgnoreCase ("-" + platform))
+    // The installer if the release has one for this platform, otherwise the zip.
+    const auto installer = installerExtension (platform);
+    for (const auto& extension : { installer, juce::String (".zip") })
+    {
+        if (extension.isEmpty() || out.assetUrl.isNotEmpty())
+            continue;
+        if (auto* assets = json["assets"].getArray())
+            for (auto& asset : *assets)
             {
-                out.assetName = name;
-                out.assetUrl = asset["browser_download_url"].toString();
-                out.assetSize = (juce::int64) asset["size"];
-                break;
+                const auto name = asset["name"].toString();
+                if (name.endsWithIgnoreCase (extension) && name.containsIgnoreCase ("-" + platform))
+                {
+                    out.assetName = name;
+                    out.assetUrl = asset["browser_download_url"].toString();
+                    out.assetSize = (juce::int64) asset["size"];
+                    out.isInstaller = extension == installer;
+                    break;
+                }
             }
-        }
+    }
     return true;
 }
 } // namespace ps::update

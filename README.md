@@ -23,6 +23,27 @@ The plug-in is an instrument with MIDI output:
 - The clock follows the host's tempo and transport while **Host sync** is on. In the standalone
   app, or with sync off, **Play** and the tempo control run the internal clock.
 
+## Installing
+
+Download the installer for your system from the
+[latest release](https://github.com/thomas-nelson23/Patternspace/releases/latest):
+
+- **macOS**: `Patternspace-<version>-macOS.pkg` installs the app in Applications and the AU, VST3
+  and CLAP plug-ins in `/Library/Audio/Plug-Ins`. The installer isn't signed yet, so the first
+  time macOS says it can't check it: open **System Settings > Privacy & Security**, scroll down
+  and click **Open Anyway** (or Control-click the .pkg and choose **Open**). The plug-ins it
+  installs aren't quarantined, so there's no `xattr` step.
+- **Windows**: `Patternspace-<version>-Windows-Setup.exe` installs the app in Program Files and
+  the VST3 and CLAP plug-ins in `C:\Program Files\Common Files\VST3` and `\CLAP`. It isn't
+  signed yet, so SmartScreen may warn: click **More info**, then **Run anyway**. Uninstall it from
+  **Settings > Apps**.
+- **Linux (Debian, Ubuntu 24.04 and newer)**: `sudo apt install ./patternspace_<version>_amd64.deb`
+  puts `patternspace` on your path with a menu entry, and the VST3, CLAP and LV2 plug-ins in
+  `/usr/lib/vst3`, `/usr/lib/clap` and `/usr/lib/lv2`. On other distributions, use the zip.
+
+Each installer lets you leave out the parts you don't want. The zips have the same files to copy
+by hand. Rescan plug-ins in your DAW after installing.
+
 ## Building
 
 You need CMake 3.22 or newer and a C++17 compiler (Xcode 14+, Visual Studio 2022, or GCC 11+ /
@@ -47,18 +68,21 @@ sudo apt install ninja-build libasound2-dev libjack-jackd2-dev ladspa-sdk libfre
 
 For a universal macOS build, add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 
-Every push builds all three platforms in GitHub Actions, runs the tests and pluginval, and
-uploads the plug-ins as build artifacts. Those builds aren't signed, so macOS blocks them until you
-run `xattr -dr com.apple.quarantine` on the plug-in.
+Every push builds all three platforms in GitHub Actions, runs the tests and pluginval, builds the
+installers, and uploads the plug-ins and installers as build artifacts. Plug-ins copied out of a
+downloaded zip are quarantined on macOS until you run `xattr -dr com.apple.quarantine` on them;
+the .pkg avoids that. The installers are built by `packaging/macos/build-pkg.sh`,
+`packaging/windows/Patternspace.iss` (Inno Setup 6) and `packaging/linux/build-deb.sh`.
 
 ## Updates and releases
 
 The standalone app has an **Updates** button. It checks the latest
 [GitHub release](https://github.com/thomas-nelson23/Patternspace/releases) once a day at launch
 (untick **Check at launch** in its menu to stop that) and whenever you pick **Check for
-updates...**. When a newer version is out the button turns green and offers to download that
-platform's zip to your Downloads folder. Quit the app and replace it with the one in the zip's
-`Standalone` folder. The plug-ins don't check for updates; reinstall them from the same zip.
+updates...**. When a newer version is out the button turns green and offers to download it to your
+Downloads folder. On macOS and Windows that's the installer: **Install now** quits Patternspace
+and opens it, and it updates the plug-ins too. On Linux it's the zip; replace the app with the one
+in its `Standalone` folder. The plug-ins don't check for updates themselves.
 
 To publish a release, bump `VERSION` in `project(Patternspace ...)` in `CMakeLists.txt`, merge it,
 then push a matching tag:
@@ -68,7 +92,8 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 The Build workflow builds all three platforms and publishes the release with
-`Patternspace-<version>-Linux.zip`, `-macOS.zip` and `-Windows.zip`. It stops if the tag and the
+`Patternspace-<version>-macOS.pkg`, `Patternspace-<version>-Windows-Setup.exe`,
+`patternspace_<version>_amd64.deb`, and a zip per platform. It stops if the tag and the
 version don't match, since the app compares its own version with the tag.
 
 ## Using it
@@ -95,6 +120,7 @@ version don't match, since the app compares its own version with the tag.
 - `tests`: engine tests, including a 128-step comparison against the prototype for every
   factory patch (`tests/data/reference-steps.json`).
 - `docs/prototype/patchbay.html`: the browser prototype the plug-in is built from.
+- `packaging`: the macOS .pkg, Windows Setup.exe and Linux .deb builders.
 - `tools/export-prototype.cjs`: regenerates the presets and reference data from the prototype
   with Playwright: `NODE_PATH=$(npm root -g) node tools/export-prototype.cjs`.
 

@@ -15,6 +15,7 @@ struct Release
     juce::String assetName; // this platform's download, empty when the release has none
     juce::String assetUrl;
     juce::int64 assetSize = 0;
+    bool isInstaller = false; // the .pkg or Setup.exe rather than the zip
 };
 
 // Compares dotted version numbers ("v0.10.1" > "0.9"). Missing parts count as 0 and anything after
@@ -24,7 +25,12 @@ int compareVersions (const juce::String& a, const juce::String& b);
 // "macOS", "Windows" or "Linux": the name the release workflow puts in each platform's zip.
 juce::String platformName();
 
-// Reads a release from GitHub's "latest release" API response and picks the zip whose name has
-// "-<platform>" in it. Returns false for anything that isn't a published release.
+// The file extension of the platform's installer (".pkg", ".exe"), or empty where there is none.
+// Linux has a .deb, but the zip works on every distribution, so the app offers that.
+juce::String installerExtension (const juce::String& platform);
+
+// Reads a release from GitHub's "latest release" API response and picks this platform's download:
+// the installer whose name has "-<platform>" in it if there is one, otherwise the zip. Returns
+// false for anything that isn't a published release.
 bool parseRelease (const juce::var& json, const juce::String& platform, Release& out);
 } // namespace ps::update
