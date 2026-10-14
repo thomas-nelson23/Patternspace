@@ -43,6 +43,7 @@ public:
     bool insideSubsystem() const { return ! subPath.empty(); }
     void openSubsystem (const std::string& id);
     void closeSubsystem (size_t depth = 0); // back out until `depth` levels stay open
+    void newSubsystem(); // an empty one, opened so its ports and modules can be added
 
     float zoom() const { return scale; }
     void zoomAround (float newScale, juce::Point<float> screenPoint);
@@ -70,7 +71,8 @@ private:
         sample,
         laneNote,
         xy,
-        open
+        open,
+        addPort
     };
     struct Zone
     {
@@ -121,6 +123,12 @@ private:
     ps::Graph& graph();
     const ps::Graph& graph() const;
     bool pathIsValid() const;
+    ps::Node* openNode (ps::Graph** parent = nullptr); // the open subsystem, and the graph it sits in
+    void addPort (bool output);
+    void showPortMenu (int index, int port);
+    void editPortName (int index, int port);
+    void renameSubsystem (int index);
+    void showTextEditor (juce::Rectangle<int> screenArea, const juce::String& text, const juce::String& placeholder);
     std::vector<std::pair<juce::String, juce::Rectangle<float>>> crumbs() const; // screen space
     void paintCrumbs (juce::Graphics&);
 
@@ -182,6 +190,12 @@ private:
 
     std::unique_ptr<juce::TextEditor> tagEditor; // made once, shown while a tag is being named
     bool tagEditing = false;
+    enum class TextTarget
+    {
+        tag,
+        portName,
+        subName
+    } textTarget = TextTarget::tag;
     std::string tagNode;
     bool tagOutput = false;
     int tagPort = 0;

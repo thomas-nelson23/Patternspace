@@ -48,7 +48,7 @@ enum class ItemType
     xy,
     sample,
     switchPos,
-    openButton
+    button
 };
 
 struct Item
@@ -153,14 +153,20 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
             for (auto& m : n.inner.front().nodes)
                 if (m.kind != "subin" && m.kind != "subout")
                     names.add (u8 (ps::titleOf (m)));
-        add (ItemType::text, 12, {}, juce::String (names.size()) + " modules inside");
+        add (ItemType::text, 12, {}, juce::String (names.size()) + (names.size() == 1 ? " module inside" : " modules inside"));
         add (ItemType::text, 24, {}, names.joinIntoString (", "));
-        add (ItemType::openButton, 20, "open", juce::String::fromUTF8 ("Open \xE2\x96\xB8"));
+        add (ItemType::button, 20, "open", juce::String::fromUTF8 ("Open \xE2\x96\xB8"));
     }
     else if (k == "subin")
+    {
         add (ItemType::text, 12, {}, "Inputs from the parent");
+        add (ItemType::button, 20, "addPort", "+ Add input");
+    }
     else if (k == "subout")
+    {
         add (ItemType::text, 12, {}, "Outputs to the parent");
+        add (ItemType::button, 20, "addPort", "+ Add output");
+    }
     return items;
 }
 
@@ -296,6 +302,93 @@ void PatchCanvas::closeSubsystem (size_t depth)
         onViewChanged();
     if (onLevelChanged)
         onLevelChanged();
+}
+
+ps::Node* PatchCanvas::openNode (ps::Graph** parent)
+{
+    if (subPath.empty())
+        return nullptr;
+    ps::Graph* g = &processor.patch();
+    ps::Node* n = nullptr;
+    for (auto& id : subPath)
+    {
+        if (n != nullptr)
+            g = &n->inner.front();
+        n = g->find (id);
+        if (n == nullptr || n->kind != "sub" || n->inner.empty())
+            return nullptr;
+    }
+    if (parent != nullptr)
+        *parent = g;
+    return n;
+}
+
+void PatchCanvas::newSubsystem()
+{
+    auto& patch = graph();
+    juce::String name = "New subsystem";
+    for (int i = 2; std::any_of (patch.nodes.begin(), patch.nodes.end(), [&] (auto& m) { return m.kind == "sub" && u8 (m.name) == name; }); ++i)
+        name = "New subsystem " + juce::String (i);
+    const auto centre = toWorld (getLocalBounds().getCentre().toFloat());
+    auto n = ps::makeSubsystem (patch.freshId ("sub"), name.toStdString(), std::round (centre.x - 80), std::round (centre.y - 60));
+    n.page = subPath.empty() ? currentPage : std::string();
+    const auto id = n.id;
+    patch.nodes.push_back (n);
+    edited();
+    openSubsystem (id);
+    showMessage ("Add inputs and outputs with the + buttons, then add modules from the library and wire them up.");
+}
+
+void PatchCanvas::addPort (bool output)
+{
+    ps::Graph* parent = nullptr;
+    auto* sub = openNode (&parent);
+    if (sub == nullptr)
+        return;
+    const auto existing = output ? ps::outputsOf (*sub) : ps::inputsOf (*sub);
+    std::string name;
+    for (int i = (int) existing.size() + 1;; ++i)
+    {
+        name = (output ? "out " : "in ") + std::to_string (i);
+        if (std::find (existing.begin(), existing.end(), name) == existing.end())
+            break;
+    }
+    ps::addSubsystemPort (*sub, output, name, ps::PortType::gate);
+    edited();
+    const auto& io = graph();
+    for (int i = 0; i < (int) io.nodes.size(); ++i)
+        if (io.nodes[(size_t) i].kind == (output ? "subout" : "subin"))
+            editPortName (i, (int) existing.size());
+}
+
+void PatchCanvas::showPortMenu (int index, int port)
+{
+    const auto& io = graph().nodes[(size_t) index];
+    const bool output = io.kind == "subout"; // the subsystem's outputs are the Outputs module's inputs
+    const auto type = output ? ps::inputType (io, port) : ps::outputType (io, port);
+    juce::PopupMenu menu;
+    menu.addSectionHeader (u8 ((output ? ps::inputsOf (io) : ps::outputsOf (io))[(size_t) port]));
+    menu.addItem ("Rename", [this, index, port] { editPortName (index, port); });
+    auto setType = [this, output, port] (ps::PortType t) {
+        ps::Graph* parent = nullptr;
+        if (auto* sub = openNode (&parent))
+        {
+            ps::setSubsystemPortType (*parent, *sub, output, port, t);
+            edited();
+        }
+    };
+    menu.addItem ("Gate", true, type == ps::PortType::gate, [setType] { setType (ps::PortType::gate); });
+    menu.addItem ("Audio", true, type == ps::PortType::audio, [setType] { setType (ps::PortType::audio); });
+    menu.addSeparator();
+    menu.addItem (output ? "Remove output" : "Remove input", [this, output, port] {
+        ps::Graph* parent = nullptr;
+        if (auto* sub = openNode (&parent))
+        {
+            ps::removeSubsystemPort (*parent, *sub, output, port);
+            edited();
+        }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
 
 std::vector<std::pair<juce::String, juce::Rectangle<float>>> PatchCanvas::crumbs() const
@@ -436,8 +529,8 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 L.zones.push_back ({ it.r.withWidth (it.r.getWidth() / 2), ZoneType::sample, {}, -1 });
                 L.zones.push_back ({ it.r.withTrimmedLeft (it.r.getWidth() / 2), ZoneType::sample, {}, 1 });
                 break;
-            case ItemType::openButton:
-                L.zones.push_back ({ it.r, ZoneType::open, {}, 0 });
+            case ItemType::button:
+                L.zones.push_back ({ it.r, it.key == "open" ? ZoneType::open : ZoneType::addPort, {}, 0 });
                 break;
             case ItemType::text:
             case ItemType::bigText:
@@ -976,7 +1069,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 g.fillEllipse (juce::Rectangle<float> (10, 10).withCentre (dot));
                 break;
             }
-            case ItemType::openButton:
+            case ItemType::button:
                 g.setColour (lineStrong);
                 g.fillRoundedRectangle (r, 4);
                 g.setColour (text);
@@ -1108,6 +1201,19 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
     pressed = hitTest (dragWorld);
     auto& patch = graph();
 
+    if (e.mods.isPopupMenu() && pressed.node >= 0 && pressed.what != Hit::header)
+    {
+        // A port's row on the Inputs or Outputs module: rename it, change its type or remove it.
+        const auto& n = patch.nodes[(size_t) pressed.node];
+        const bool io = n.kind == "subin" || n.kind == "subout";
+        const int count = (int) (n.kind == "subin" ? ps::outputsOf (n) : ps::inputsOf (n)).size();
+        const int row = (int) std::floor ((dragWorld.y - (float) n.y - ioTop) / rowH);
+        if (io && ! n.collapsed && row >= 0 && row < count && ! subPath.empty())
+        {
+            showPortMenu (pressed.node, row);
+            return;
+        }
+    }
     if (e.mods.isPopupMenu() && pressed.node >= 0)
     {
         if (! selection.count (patch.nodes[(size_t) pressed.node].id))
@@ -1410,6 +1516,9 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
         case ZoneType::open:
             openSubsystem (n.id);
             return;
+        case ZoneType::addPort:
+            addPort (n.kind == "subout");
+            return;
         case ZoneType::xy:
         {
             const auto inner = z.r.reduced (7);
@@ -1570,7 +1679,10 @@ void PatchCanvas::showNodeMenu (int index)
     for (auto& p : rootPages)
         pages.addItem (u8 (p.name), p.id != currentPage, false, [this, id = p.id] { moveSelectionToPage (id); });
     if (n.kind == "sub")
+    {
         menu.addItem ("Open", [this, id = n.id] { openSubsystem (id); });
+        menu.addItem ("Rename", [this, index] { renameSubsystem (index); });
+    }
     menu.addItem (n.collapsed ? "Expand" : "Collapse", [this, id = n.id] {
         if (auto* m = graph().find (id))
         {
@@ -1614,13 +1726,49 @@ void PatchCanvas::editTag (int index, bool output, int port)
     tagNode = n.id;
     tagOutput = output;
     tagPort = port;
+    textTarget = TextTarget::tag;
+    const auto& tags = output ? n.tagOut : n.tagIn;
+    const auto it = tags.find (port);
+    const auto p = toScreen (output ? L.outs[(size_t) port] : L.ins[(size_t) port]);
+    const int w = 150, h = 24;
+    showTextEditor ({ output ? juce::roundToInt (p.x) + 12 : juce::roundToInt (p.x) - 12 - w, juce::roundToInt (p.y) - h / 2, w, h },
+                    it != tags.end() ? u8 (it->second) : juce::String(), output ? "Name this output" : "Tag to listen to");
+    showMessage (output ? "Inputs with the same tag receive this output without a wire. Leave it empty to remove the tag."
+                        : "This input receives the output that owns the tag. Leave it empty to remove the tag.");
+}
 
+void PatchCanvas::editPortName (int index, int port)
+{
+    const auto& n = graph().nodes[(size_t) index];
+    const auto names = n.kind == "subin" ? ps::outputsOf (n) : ps::inputsOf (n);
+    if (port < 0 || port >= (int) names.size())
+        return;
+    tagNode = n.id;
+    tagPort = port;
+    tagOutput = n.kind == "subout"; // which side of the subsystem
+    textTarget = TextTarget::portName;
+    const auto r = juce::Rectangle<float> ((float) n.x + 8, (float) n.y + ioTop + port * rowH - 3, nodeWidth (n) - 16, rowH + 6);
+    showTextEditor ({ toScreen (r.getTopLeft()).toInt(), toScreen (r.getBottomRight()).toInt() }, u8 (names[(size_t) port]), "Port name");
+    showMessage ("Name this port. It shows on the subsystem outside too.");
+}
+
+void PatchCanvas::renameSubsystem (int index)
+{
+    const auto& n = graph().nodes[(size_t) index];
+    tagNode = n.id;
+    textTarget = TextTarget::subName;
+    const auto L = layoutOf (n);
+    const auto r = L.header.reduced (30, 2);
+    showTextEditor ({ toScreen (r.getTopLeft()).toInt(), toScreen (r.getBottomRight()).toInt() }, u8 (n.name), "Subsystem name");
+}
+
+void PatchCanvas::showTextEditor (juce::Rectangle<int> r, const juce::String& text, const juce::String& placeholder)
+{
     if (! tagEditor)
     {
         tagEditor = std::make_unique<juce::TextEditor>();
         auto& ed = *tagEditor;
         ed.setFont (ps::theme::mono (12.0f, true));
-        ed.setInputRestrictions (16);
         ed.setColour (juce::TextEditor::backgroundColourId, ps::theme::panel);
         ed.setColour (juce::TextEditor::textColourId, ps::theme::text);
         ed.setColour (juce::TextEditor::outlineColourId, ps::theme::selected);
@@ -1631,20 +1779,14 @@ void PatchCanvas::editTag (int index, bool output, int port)
         addChildComponent (ed);
     }
     auto& ed = *tagEditor;
-    const auto& tags = output ? n.tagOut : n.tagIn;
-    const auto it = tags.find (port);
-    ed.setTextToShowWhenEmpty (output ? "Name this output" : "Tag to listen to", ps::theme::muted);
-    ed.setText (it != tags.end() ? u8 (it->second) : juce::String(), false);
-    const auto p = toScreen (output ? L.outs[(size_t) port] : L.ins[(size_t) port]);
-    const int w = 150, h = 24;
-    juce::Rectangle<int> r (output ? juce::roundToInt (p.x) + 12 : juce::roundToInt (p.x) - 12 - w, juce::roundToInt (p.y) - h / 2, w, h);
+    ed.setInputRestrictions (textTarget == TextTarget::tag ? 16 : 32);
+    ed.setTextToShowWhenEmpty (placeholder, ps::theme::muted);
+    ed.setText (text, false);
     ed.setBounds (r.constrainedWithin (getLocalBounds().reduced (4)));
     tagEditing = true;
     ed.setVisible (true);
     ed.selectAll();
     ed.grabKeyboardFocus();
-    showMessage (output ? "Inputs with the same tag receive this output without a wire. Leave it empty to remove the tag."
-                        : "This input receives the output that owns the tag. Leave it empty to remove the tag.");
 }
 
 void PatchCanvas::finishTagEdit (bool keep)
@@ -1661,6 +1803,26 @@ void PatchCanvas::finishTagEdit (bool keep)
     auto* n = patch.find (tagNode);
     if (! n)
         return;
+    if (textTarget == TextTarget::subName)
+    {
+        const auto name = text.trim().toStdString();
+        if (! name.empty() && name != n->name)
+        {
+            n->name = name;
+            edited();
+        }
+        return;
+    }
+    if (textTarget == TextTarget::portName)
+    {
+        const auto name = text.trim().toStdString();
+        if (auto* sub = openNode(); sub != nullptr && ! name.empty())
+        {
+            ps::renameSubsystemPort (*sub, tagOutput, tagPort, name);
+            edited();
+        }
+        return;
+    }
     const auto tag = text.trim().toUpperCase().replaceCharacter (' ', '_').toStdString();
     auto& tags = tagOutput ? n->tagOut : n->tagIn;
     const auto old = tags.count (tagPort) ? tags[tagPort] : std::string();

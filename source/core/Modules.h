@@ -66,6 +66,18 @@ const char* gmDrumName (int note); // nullptr when the note isn't a common GM dr
 // Drops wires and tags on ports a module no longer has.
 void prunePorts (Graph& graph, const Node& node);
 
+// Subsystem ports. A subsystem's inputs are the outputs of the Inputs module inside it, and its
+// outputs are the inputs of the Outputs module, so these change both sides together, along with
+// the wires and tags on them. `parent` is the graph the subsystem sits in.
+Node makeSubsystem (const std::string& id, const std::string& name, double x, double y); // no ports yet
+Node* subsystemInputs (Node& subsystem);  // the Inputs module inside, made if missing
+Node* subsystemOutputs (Node& subsystem); // the Outputs module inside, made if missing
+void addSubsystemPort (Node& subsystem, bool output, const std::string& name, PortType type);
+void removeSubsystemPort (Graph& parent, Node& subsystem, bool output, int port);
+void renameSubsystemPort (Node& subsystem, bool output, int port, const std::string& name);
+// Changing a port's type drops the wires on it, since gate and audio ports don't connect.
+void setSubsystemPortType (Graph& parent, Node& subsystem, bool output, int port, PortType type);
+
 // The modes a Combine or Switch can be in, in display order.
 const std::vector<std::string>& combineModes();
 extern const char* const kCombineAMinusB; // "A−B" as the prototype spells it
