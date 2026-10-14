@@ -54,6 +54,8 @@ public:
     void addSubsystem (const ps::presets::SubsystemTemplate& subsystem);
     void moveSelectionToPage (const std::string& pageId);
     void collapseAll (bool collapse);
+    void copySelection();
+    void pasteClipboard();
 
     std::function<void()> onViewChanged;  // zoom changed
     std::function<void()> onEdited;       // after any change to the patch
@@ -114,7 +116,8 @@ private:
         move,
         wire,
         xy,
-        block
+        block,
+        box // left-drag on empty space draws a selection box
     };
 
     void timerCallback() override;
@@ -183,10 +186,14 @@ private:
     juce::Point<float> dragStart, dragWorld;
     juce::Point<float> panStart;
     bool dragMoved = false;
+    bool menuPress = false; // right-click (or ctrl-click on a Mac): pans when dragged, opens the module menu when not
     HitResult pressed;
     std::vector<std::pair<std::string, juce::Point<float>>> moveStart;
     int dragBlock = -1;
     juce::Point<float> blockStart;
+    juce::Point<float> lastMouse; // where pasted modules land when the mouse is over the canvas
+    int pasteCount = 0;           // without the mouse, each paste lands a step further from the copy
+    std::set<std::string> boxBase; // what was selected before a shift box-drag, kept as the box changes
 
     std::unique_ptr<juce::TextEditor> tagEditor; // made once, shown while a tag is being named
     bool tagEditing = false;
