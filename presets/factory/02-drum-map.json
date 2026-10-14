@@ -1,0 +1,237 @@
+{
+  "name": "Drum Map",
+  "patch": {
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "dm",
+        "k": "grids",
+        "x": 250,
+        "y": 60,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {
+          "0": "KICK",
+          "1": "SNARE",
+          "2": "HAT"
+        },
+        "p": {
+          "mx": 30,
+          "my": 20,
+          "dk": 6,
+          "ds": 5,
+          "dh": 6,
+          "chaos": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s1",
+        "k": "sample",
+        "x": 560,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "909 Kick",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s2",
+        "k": "sample",
+        "x": 560,
+        "y": 200,
+        "c": 0,
+        "tagIn": {
+          "0": "SNARE"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "Crack Snare",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s3",
+        "k": "sample",
+        "x": 560,
+        "y": 360,
+        "c": 0,
+        "tagIn": {
+          "0": "HAT"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "Tight Hat",
+          "pitch": 0,
+          "decay": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a1",
+        "k": "audio",
+        "x": 760,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a2",
+        "k": "audio",
+        "x": 760,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 2
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a3",
+        "k": "audio",
+        "x": 760,
+        "y": 360,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m1",
+        "k": "midi",
+        "x": 990,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "SNARE",
+          "2": "HAT"
+        },
+        "tagOut": {},
+        "p": {
+          "name": "Drum Rack",
+          "ch": 10,
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Snare",
+              "note": 38
+            },
+            {
+              "name": "Hat",
+              "note": 42
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "s1",
+        "p": 0,
+        "b": "a1",
+        "q": 0
+      },
+      {
+        "a": "s2",
+        "p": 0,
+        "b": "a2",
+        "q": 0
+      },
+      {
+        "a": "s3",
+        "p": 0,
+        "b": "a3",
+        "q": 0
+      }
+    ],
+    "blocks": [
+      {
+        "id": "b1",
+        "x": 6,
+        "y": 218,
+        "w": 168,
+        "h": 172,
+        "t": "Timing",
+        "c": "#7c8796",
+        "pg": "p1"
+      },
+      {
+        "id": "b2",
+        "x": 196,
+        "y": 8,
+        "w": 344,
+        "h": 300,
+        "t": "Drum map",
+        "c": "#f5d77a",
+        "pg": "p1"
+      },
+      {
+        "id": "b3",
+        "x": 550,
+        "y": 8,
+        "w": 370,
+        "h": 520,
+        "t": "Sound",
+        "c": "#7bd88f",
+        "pg": "p1"
+      }
+    ],
+    "notes": [
+      {
+        "id": "t1",
+        "x": 250,
+        "y": 330,
+        "text": "Drag the dot to move around the map. Up is straighter, down is more broken, left is sparser and right is busier. Fill sets how many hits each drum plays, and Chaos varies them every loop.",
+        "w": 230,
+        "pg": "p1"
+      }
+    ],
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ]
+  }
+}

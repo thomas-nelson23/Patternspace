@@ -1,0 +1,298 @@
+#include "PluginProcessor.h"
+
+#include "../core/Modules.h"
+#include "../state/PatchJson.h"
+#include "PluginEditor.h"
+#include "Presets.h"
+
+#include <cmath>
+
+juce::AudioProcessor::BusesProperties PatternspaceProcessor::makeBuses()
+{
+    // Out 1 is the main stereo output. Outs 2-8 are optional: any a host leaves switched off
+    // (and all of them in the standalone app) are mixed into Out 1.
+    auto buses = BusesProperties().withOutput ("Out 1", juce::AudioChannelSet::stereo(), true);
+    for (int i = 2; i <= ps::Sampler::numBuses; ++i)
+        buses = buses.withOutput ("Out " + juce::String (i), juce::AudioChannelSet::stereo(), false);
+    return buses;
+}
+
+namespace
+{
+juce::AudioProcessorValueTreeState::ParameterLayout makeParameters()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "bpm", 1 }, "Tempo",
+                                                             juce::NormalisableRange<float> (40.0f, 240.0f, 0.1f), 124.0f,
+                                                             juce::AudioParameterFloatAttributes().withLabel ("BPM")));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "run", 1 }, "Play", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sync", 1 }, "Host sync", true));
+    return layout;
+}
+} // namespace
+
+PatternspaceProcessor::PatternspaceProcessor()
+    : AudioProcessor (makeBuses()),
+      params (*this, nullptr, "Patternspace", makeParameters())
+{
+    bpmParam = params.getRawParameterValue ("bpm");
+    runParam = params.getRawParameterValue ("run");
+    syncParam = params.getRawParameterValue ("sync");
+
+    const auto& factory = ps::presets::factory();
+    if (! factory.empty())
+        loadPatch (factory.front().patch, factory.front().name);
+    else
+    {
+        ps::Graph g;
+        g.nodes.push_back (ps::makeNode ("clock", "clk", 14, 250));
+        ps::normalise (g);
+        loadPatch (g, "Empty");
+    }
+}
+
+PatternspaceProcessor::~PatternspaceProcessor() = default;
+
+void PatternspaceProcessor::prepareToPlay (double sampleRate, int)
+{
+    sampler.prepare (sampleRate);
+    numPending = 0;
+    wasPlaying = false;
+    internalPpq = 0;
+}
+
+void PatternspaceProcessor::releaseResources() { sampler.stopAll(); }
+
+bool PatternspaceProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    if (! layouts.inputBuses.isEmpty() && ! layouts.getMainInputChannelSet().isDisabled())
+        return false;
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    for (int i = 1; i < layouts.outputBuses.size(); ++i)
+    {
+        const auto& set = layouts.outputBuses.getReference (i);
+        if (! set.isDisabled() && set != juce::AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
+}
+
+void PatternspaceProcessor::sendNoteOffs (juce::MidiBuffer& midi, int numSamples)
+{
+    int kept = 0;
+    for (int i = 0; i < numPending; ++i)
+    {
+        auto p = pendingOffs[(size_t) i];
+        if (p.samplesLeft < numSamples)
+            midi.addEvent (juce::MidiMessage::noteOff (p.channel, p.note), std::max (0, p.samplesLeft));
+        else
+        {
+            p.samplesLeft -= numSamples;
+            pendingOffs[(size_t) kept++] = p;
+        }
+    }
+    numPending = kept;
+}
+
+void PatternspaceProcessor::allNotesOff (juce::MidiBuffer& midi, int offset)
+{
+    for (int i = 0; i < numPending; ++i)
+        midi.addEvent (juce::MidiMessage::noteOff (pendingOffs[(size_t) i].channel, pendingOffs[(size_t) i].note), offset);
+    numPending = 0;
+}
+
+void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    const int n = buffer.getNumSamples();
+    buffer.clear();
+    midi.clear();
+    sendNoteOffs (midi, n);
+
+    // Follow the host's transport when it has one and sync is on; otherwise run our own clock.
+    const double sr = getSampleRate() > 0 ? getSampleRate() : 44100.0;
+    bool hostKnown = false, playing = false;
+    double ppq = 0, bpm = bpmParam->load();
+    if (syncParam->load() > 0.5f)
+        if (auto* head = getPlayHead())
+            if (auto pos = head->getPosition())
+                if (auto p = pos->getPpqPosition())
+                {
+                    hostKnown = true;
+                    playing = pos->getIsPlaying();
+                    ppq = *p;
+                    if (auto b = pos->getBpm())
+                        bpm = *b;
+                }
+    bpm = juce::jlimit (20.0, 999.0, bpm);
+    const double samplesPerBeat = sr * 60.0 / bpm;
+    if (! hostKnown)
+    {
+        playing = runParam->load() > 0.5f;
+        if (! playing)
+            internalPpq = 0; // start again from bar 1
+        ppq = internalPpq;
+        if (playing)
+            internalPpq += n / samplesPerBeat;
+    }
+
+    if (! playing)
+    {
+        if (wasPlaying)
+            allNotesOff (midi, 0);
+        wasPlaying = false;
+    }
+    else
+    {
+        const double start = ppq * 4.0, end = start + n / samplesPerBeat * 4.0;
+        const int gate = std::max (1, (int) (samplesPerBeat / 8.0)); // half a sixteenth
+        const juce::SpinLock::ScopedLockType lock (engineLock);
+        if (engine)
+            for (auto k = (std::int64_t) std::ceil (start - 1.0e-7); (double) k < end - 1.0e-7; ++k)
+            {
+                const int offset = juce::jlimit (0, n - 1, (int) std::lround ((k - start) / 4.0 * samplesPerBeat));
+                if (! wasPlaying || engine->lastStep() != k - 1)
+                    engine->locate (k); // started, looped or jumped: get the generators back in phase
+                wasPlaying = true;
+
+                stepOut.clear();
+                engine->step (k, stepOut);
+                for (auto& note : stepOut.notes)
+                {
+                    // A note that is still held ends just before it plays again.
+                    for (int i = 0; i < numPending; ++i)
+                        if (pendingOffs[(size_t) i].channel == note.channel && pendingOffs[(size_t) i].note == note.note)
+                        {
+                            midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), offset);
+                            pendingOffs[(size_t) i] = pendingOffs[(size_t) --numPending];
+                            break;
+                        }
+                    midi.addEvent (juce::MidiMessage::noteOn (note.channel, note.note, (juce::uint8) note.velocity), offset);
+                    if (offset + gate < n)
+                        midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), offset + gate);
+                    else if (numPending < (int) pendingOffs.size())
+                        pendingOffs[(size_t) numPending++] = { note.channel, note.note, offset + gate - n };
+                }
+                for (auto& hit : stepOut.hits)
+                    sampler.trigger (hit, offset);
+            }
+        wasPlaying = true;
+    }
+    running = playing;
+    followingHost = hostKnown;
+    tempo = bpm;
+
+    // Each audio out renders into its own stereo bus when the host has it switched on.
+    const bool standalone = wrapperType == wrapperType_Standalone;
+    auto main = getBusBuffer (buffer, false, 0);
+    float* mainL = main.getNumChannels() > 0 ? main.getWritePointer (0) : nullptr;
+    float* mainR = main.getNumChannels() > 1 ? main.getWritePointer (1) : mainL;
+    std::array<float*, ps::Sampler::numBuses> left {}, right {};
+    for (int b = 0; b < ps::Sampler::numBuses; ++b)
+    {
+        left[(size_t) b] = mainL;
+        right[(size_t) b] = mainR;
+        if (b == 0 || standalone || b >= getBusCount (false))
+            continue;
+        auto bus = getBusBuffer (buffer, false, b);
+        if (bus.getNumChannels() >= 2)
+        {
+            left[(size_t) b] = bus.getWritePointer (0);
+            right[(size_t) b] = bus.getWritePointer (1);
+        }
+    }
+    sampler.render (left, right, n);
+    for (int b = 0; b < ps::Sampler::numBuses; ++b)
+    {
+        const float peak = sampler.takePeak (b);
+        if (peak > levels[(size_t) b].load())
+            levels[(size_t) b] = peak;
+    }
+}
+
+void PatternspaceProcessor::commitPatch()
+{
+    auto next = std::make_unique<ps::Engine>();
+    next->load (graph);
+    const int version = ++editVersion;
+    {
+        const juce::SpinLock::ScopedLockType lock (engineLock);
+        if (engine)
+            next->adoptState (*engine);
+        std::swap (engine, next);
+        engineVersion = version;
+    }
+    auto text = ps::json::toString (graph);
+    const juce::ScopedLock sl (stateLock);
+    savedPatch = std::move (text);
+    savedName = name;
+}
+
+void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::String& newName)
+{
+    graph = newPatch;
+    name = newName;
+    commitPatch();
+    sendChangeMessage();
+}
+
+bool PatternspaceProcessor::copyView (std::vector<ps::Engine::View>& out) const
+{
+    const juce::SpinLock::ScopedTryLockType lock (engineLock);
+    if (! lock.isLocked() || ! engine || engineVersion != editVersion)
+        return false;
+    out = engine->view();
+    return true;
+}
+
+float PatternspaceProcessor::busLevel (int bus) const
+{
+    return bus >= 1 && bus <= ps::Sampler::numBuses ? levels[(size_t) bus - 1].load() : 0.0f;
+}
+
+void PatternspaceProcessor::decayLevels()
+{
+    for (auto& l : levels)
+        l = l.load() * 0.7f;
+}
+
+void PatternspaceProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    auto xml = params.copyState().createXml();
+    if (! xml)
+        return;
+    {
+        const juce::ScopedLock sl (stateLock);
+        xml->setAttribute ("patch", savedPatch);
+        xml->setAttribute ("patchName", savedName);
+    }
+    copyXmlToBinary (*xml, destData);
+}
+
+void PatternspaceProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (! xml || ! xml->hasTagName (params.state.getType()))
+        return;
+    const auto patchText = xml->getStringAttribute ("patch");
+    const auto patchName = xml->getStringAttribute ("patchName");
+    xml->removeAttribute ("patch");
+    xml->removeAttribute ("patchName");
+    params.replaceState (juce::ValueTree::fromXml (*xml));
+
+    ps::Graph g;
+    if (patchText.isEmpty() || ! ps::json::fromString (patchText, g))
+        return;
+    if (juce::MessageManager::existsAndIsCurrentThread())
+        loadPatch (g, patchName);
+    else
+        juce::MessageManager::callAsync ([safe = juce::WeakReference<PatternspaceProcessor> (this), g, patchName] {
+            if (auto* self = safe.get())
+                self->loadPatch (g, patchName);
+        });
+}
+
+juce::AudioProcessorEditor* PatternspaceProcessor::createEditor() { return new PatternspaceEditor (*this); }
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new PatternspaceProcessor(); }

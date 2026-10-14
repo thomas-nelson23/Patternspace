@@ -1,0 +1,322 @@
+{
+  "name": "Four on the Floor",
+  "patch": {
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "k",
+        "k": "euclid",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "hits": 4,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "h",
+        "k": "step",
+        "x": 224,
+        "y": 200,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "HATS"
+        },
+        "p": {
+          "cells": [
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "cl",
+        "k": "step",
+        "x": 224,
+        "y": 330,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "CLAP"
+        },
+        "p": {
+          "cells": [
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s1",
+        "k": "sample",
+        "x": 434,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "sample": "909 Kick",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s2",
+        "k": "sample",
+        "x": 434,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "sample": "Tight Hat",
+          "pitch": 0,
+          "decay": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s3",
+        "k": "sample",
+        "x": 434,
+        "y": 370,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "sample": "Clap",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a1",
+        "k": "audio",
+        "x": 624,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a2",
+        "k": "audio",
+        "x": 624,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 2
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a3",
+        "k": "audio",
+        "x": 624,
+        "y": 370,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m1",
+        "k": "midi",
+        "x": 850,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "HATS",
+          "2": "CLAP"
+        },
+        "tagOut": {},
+        "p": {
+          "name": "Drum Rack",
+          "ch": 10,
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Hat",
+              "note": 42
+            },
+            {
+              "name": "Clap",
+              "note": 39
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "k",
+        "p": 0,
+        "b": "s1",
+        "q": 0
+      },
+      {
+        "a": "h",
+        "p": 0,
+        "b": "s2",
+        "q": 0
+      },
+      {
+        "a": "cl",
+        "p": 0,
+        "b": "s3",
+        "q": 0
+      },
+      {
+        "a": "s1",
+        "p": 0,
+        "b": "a1",
+        "q": 0
+      },
+      {
+        "a": "s2",
+        "p": 0,
+        "b": "a2",
+        "q": 0
+      },
+      {
+        "a": "s3",
+        "p": 0,
+        "b": "a3",
+        "q": 0
+      }
+    ],
+    "blocks": [
+      {
+        "id": "b1",
+        "x": 6,
+        "y": 218,
+        "w": 168,
+        "h": 172,
+        "t": "Timing",
+        "c": "#7c8796",
+        "pg": "p1"
+      },
+      {
+        "id": "b2",
+        "x": 214,
+        "y": 8,
+        "w": 180,
+        "h": 450,
+        "t": "Groove",
+        "c": "#f2a541",
+        "pg": "p1"
+      },
+      {
+        "id": "b3",
+        "x": 424,
+        "y": 8,
+        "w": 360,
+        "h": 540,
+        "t": "Sound",
+        "c": "#7bd88f",
+        "pg": "p1"
+      }
+    ],
+    "notes": [
+      {
+        "id": "t1",
+        "x": 224,
+        "y": 470,
+        "text": "Click the cells in a Step grid to edit the hats and claps.",
+        "w": 160,
+        "pg": "p1"
+      },
+      {
+        "id": "t2",
+        "x": 850,
+        "y": 200,
+        "text": "Everything here is tagged, so the MIDI out needs no wires.",
+        "w": 170,
+        "pg": "p1"
+      }
+    ],
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ]
+  }
+}
