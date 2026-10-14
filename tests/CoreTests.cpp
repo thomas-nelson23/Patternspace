@@ -273,6 +273,41 @@ void testTagsAndFeedback()
     checkEq (juce::String (engine.valuesAt ("e")), juce::String ("1"), "the tag reaches the other tab");
     checkEq (juce::String (engine.valuesAt ("a")), juce::String ("0"), "a feedback loop reads silence");
 }
+// The editor draws an open subsystem from the engine's view of the graph inside it.
+void testSubsystemView()
+{
+    auto presets = factoryPresets();
+    auto it = std::find_if (presets.begin(), presets.end(), [] (auto& p) { return p.patch.find ("sn") != nullptr; });
+    check (it != presets.end(), "a factory preset has the subsystem sn");
+    if (it == presets.end())
+        return;
+    const auto& patch = it->patch;
+    const auto& inner = patch.find ("sn")->inner.front();
+
+    ps::Engine engine;
+    engine.load (patch);
+    engine.setViewPath ({ "sn" });
+    checkEq ((int) engine.view().size(), (int) inner.nodes.size(), "the view lists the modules inside sn");
+    const int pr = inner.indexOf ("pr");
+    ps::StepOutput out;
+    int mismatches = 0, hits = 0;
+    for (int s = 0; s < 64; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        const int v = engine.view()[(size_t) pr].out[0];
+        hits += v > 0 ? 1 : 0;
+        mismatches += juce::String (v) != juce::String (engine.valuesAt ("sn/pr")) ? 1 : 0;
+    }
+    checkEq (mismatches, 0, "the view inside sn follows its modules");
+    check (hits > 0, "the snare inside sn plays");
+
+    engine.setViewPath ({ "sn", "missing" });
+    checkEq ((int) engine.view().size(), (int) patch.nodes.size(), "a broken path shows the root patch");
+    engine.setViewPath ({});
+    checkEq ((int) engine.view().size(), (int) patch.nodes.size(), "an empty path shows the root patch");
+}
+
 void testUpdateCheck()
 {
     using ps::update::compareVersions;
@@ -331,6 +366,7 @@ int main()
     testJsonRoundTrip();
     testEditing();
     testTagsAndFeedback();
+    testSubsystemView();
     testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";

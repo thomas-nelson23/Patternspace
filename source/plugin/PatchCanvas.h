@@ -11,8 +11,9 @@
 
 class PatternspaceProcessor;
 
-// The workspace: modules, cables and tags on the current tab. Drag empty space to pan,
-// Ctrl/Cmd-scroll or pinch to zoom, drag an output onto an input to wire it, click a port to tag it.
+// The workspace: modules, cables and tags on the current tab, or inside a subsystem that has been
+// opened. Drag empty space to pan, Ctrl/Cmd-scroll or pinch to zoom, drag an output onto an input to
+// wire it, click a port to tag it.
 class PatchCanvas : public juce::Component,
                     private juce::Timer
 {
@@ -35,7 +36,13 @@ public:
     void patchReplaced();
 
     const std::string& page() const { return currentPage; }
-    void setPage (const std::string& pageId);
+    void setPage (const std::string& pageId); // also closes any open subsystem
+
+    // Opening a subsystem shows the patch inside it, where it can be edited like any other.
+    // The path runs from the root down, one subsystem id per level.
+    bool insideSubsystem() const { return ! subPath.empty(); }
+    void openSubsystem (const std::string& id);
+    void closeSubsystem (size_t depth = 0); // back out until `depth` levels stay open
 
     float zoom() const { return scale; }
     void zoomAround (float newScale, juce::Point<float> screenPoint);
@@ -50,6 +57,7 @@ public:
     std::function<void()> onViewChanged;  // zoom changed
     std::function<void()> onEdited;       // after any change to the patch
     std::function<void()> onPagesChanged; // a tab was added, or modules moved between tabs
+    std::function<void()> onLevelChanged; // a subsystem was opened or closed
     std::function<void (const ps::Node&)> onExportSubsystem;
 
 private:
@@ -61,7 +69,8 @@ private:
         cell,
         sample,
         laneNote,
-        xy
+        xy,
+        open
     };
     struct Zone
     {
@@ -108,6 +117,13 @@ private:
 
     void timerCallback() override;
 
+    // The graph being edited: the root patch, or the inside of the open subsystem.
+    ps::Graph& graph();
+    const ps::Graph& graph() const;
+    bool pathIsValid() const;
+    std::vector<std::pair<juce::String, juce::Rectangle<float>>> crumbs() const; // screen space
+    void paintCrumbs (juce::Graphics&);
+
     juce::Point<float> toWorld (juce::Point<float> screen) const { return (screen - offset) / scale; }
     juce::Point<float> toScreen (juce::Point<float> world) const { return world * scale + offset; }
 
@@ -144,6 +160,13 @@ private:
     float scale = 1.0f;
     juce::Point<float> offset { 0.0f, 0.0f }; // screen = world * scale + offset
     std::string currentPage;
+    std::vector<std::string> subPath; // ids of the open subsystems, outermost first
+    struct SavedView
+    {
+        float scale;
+        juce::Point<float> offset;
+    };
+    std::vector<SavedView> savedViews; // the view at each level above, restored on the way out
     std::set<std::string> selection;
     int selectedWire = -1;
     int hoverNode = -1;

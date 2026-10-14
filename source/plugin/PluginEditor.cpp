@@ -215,7 +215,8 @@ public:
             {
                 g.setColour (ps::theme::canvas);
                 g.fillRoundedRectangle (r.withTrimmedBottom (-4), 5);
-                g.setColour (selected);
+                // While a subsystem is open the tab stays marked, dimmed: clicking it goes back.
+                g.setColour (canvas.insideSubsystem() ? muted : selected);
                 g.fillRect (r.getX() + 6, r.getBottom() - 2, r.getWidth() - 12, 2.0f);
             }
             g.setColour (active ? text : label);
@@ -393,6 +394,7 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
 
     canvas.onViewChanged = [this] { refreshZoom(); };
     canvas.onPagesChanged = [this] { tabs->repaint(); };
+    canvas.onLevelChanged = [this] { tabs->repaint(); };
     canvas.onEdited = [this] { tabs->repaint(); };
     canvas.onExportSubsystem = [this] (const ps::Node& n) { exportSubsystem (n); };
 

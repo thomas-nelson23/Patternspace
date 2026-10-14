@@ -215,6 +215,7 @@ void PatternspaceProcessor::commitPatch()
 {
     auto next = std::make_unique<ps::Engine>();
     next->load (graph);
+    next->setViewPath (viewPath);
     const int version = ++editVersion;
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
@@ -233,8 +234,19 @@ void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::St
 {
     graph = newPatch;
     name = newName;
+    viewPath.clear(); // the editor goes back to the root of a new patch
     commitPatch();
     sendChangeMessage();
+}
+
+void PatternspaceProcessor::setViewPath (const std::vector<std::string>& path)
+{
+    if (path == viewPath)
+        return;
+    viewPath = path;
+    const juce::SpinLock::ScopedLockType lock (engineLock);
+    if (engine)
+        engine->setViewPath (viewPath);
 }
 
 bool PatternspaceProcessor::copyView (std::vector<ps::Engine::View>& out) const

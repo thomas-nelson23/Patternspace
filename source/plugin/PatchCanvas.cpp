@@ -6,6 +6,7 @@
 #include "Theme.h"
 
 #include <cmath>
+#include <utility>
 
 namespace
 {
@@ -46,7 +47,8 @@ enum class ItemType
     meter,
     xy,
     sample,
-    switchPos
+    switchPos,
+    openButton
 };
 
 struct Item
@@ -153,6 +155,7 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
                     names.add (u8 (ps::titleOf (m)));
         add (ItemType::text, 12, {}, juce::String (names.size()) + " modules inside");
         add (ItemType::text, 24, {}, names.joinIntoString (", "));
+        add (ItemType::openButton, 20, "open", juce::String::fromUTF8 ("Open \xE2\x96\xB8"));
     }
     else if (k == "subin")
         add (ItemType::text, 12, {}, "Inputs from the parent");
@@ -195,6 +198,9 @@ void PatchCanvas::patchReplaced()
     selectedWire = -1;
     hoverNode = -1;
     drag = Drag::none;
+    subPath.clear();
+    savedViews.clear();
+    processor.setViewPath (subPath);
     const auto& pages = processor.patch().pages;
     const bool stillThere = std::any_of (pages.begin(), pages.end(), [this] (auto& pg) { return pg.id == currentPage; });
     if (! stillThere)
@@ -205,9 +211,10 @@ void PatchCanvas::patchReplaced()
 
 void PatchCanvas::setPage (const std::string& id)
 {
-    if (id == currentPage)
+    if (id == currentPage && subPath.empty())
         return;
     finishTagEdit (true);
+    closeSubsystem();
     currentPage = id;
     selection.clear();
     selectedWire = -1;
@@ -216,10 +223,148 @@ void PatchCanvas::setPage (const std::string& id)
 
 bool PatchCanvas::onPage (const ps::Node& n) const { return n.page.empty() || n.page == currentPage; }
 
+// ---- subsystems ------------------------------------------------------------------------------
+
+const ps::Graph& PatchCanvas::graph() const
+{
+    const ps::Graph* g = &processor.patch();
+    for (auto& id : subPath)
+    {
+        const auto* n = g->find (id);
+        if (! n || n->kind != "sub" || n->inner.empty())
+            break;
+        g = &n->inner.front();
+    }
+    return *g;
+}
+
+ps::Graph& PatchCanvas::graph() { return const_cast<ps::Graph&> (std::as_const (*this).graph()); }
+
+bool PatchCanvas::pathIsValid() const
+{
+    const ps::Graph* g = &processor.patch();
+    for (auto& id : subPath)
+    {
+        const auto* n = g->find (id);
+        if (! n || n->kind != "sub" || n->inner.empty())
+            return false;
+        g = &n->inner.front();
+    }
+    return true;
+}
+
+void PatchCanvas::openSubsystem (const std::string& id)
+{
+    auto* n = graph().find (id);
+    if (n == nullptr || n->kind != "sub")
+        return;
+    finishTagEdit (true);
+    if (n->inner.empty())
+        n->inner.emplace_back();
+    savedViews.push_back ({ scale, offset });
+    subPath.push_back (id);
+    selection.clear();
+    selectedWire = -1;
+    hoverNode = -1;
+    drag = Drag::none;
+    processor.setViewPath (subPath);
+    viewValid = false;
+    fitView();
+    if (onLevelChanged)
+        onLevelChanged();
+}
+
+void PatchCanvas::closeSubsystem (size_t depth)
+{
+    if (depth >= subPath.size())
+        return;
+    finishTagEdit (true);
+    // Back out to the subsystem that was opened at `depth`, selected so it's easy to spot.
+    const auto reopened = subPath[depth];
+    scale = savedViews[depth].scale;
+    offset = savedViews[depth].offset;
+    subPath.resize (depth);
+    savedViews.resize (depth);
+    selection = { reopened };
+    selectedWire = -1;
+    hoverNode = -1;
+    drag = Drag::none;
+    processor.setViewPath (subPath);
+    viewValid = false;
+    repaint();
+    if (onViewChanged)
+        onViewChanged();
+    if (onLevelChanged)
+        onLevelChanged();
+}
+
+std::vector<std::pair<juce::String, juce::Rectangle<float>>> PatchCanvas::crumbs() const
+{
+    std::vector<std::pair<juce::String, juce::Rectangle<float>>> out;
+    if (subPath.empty())
+        return out;
+    juce::StringArray names;
+    const auto& root = processor.patch();
+    auto page = std::find_if (root.pages.begin(), root.pages.end(), [this] (auto& p) { return p.id == currentPage; });
+    names.add (juce::String::fromUTF8 ("\xE2\x97\x80 ") + (page != root.pages.end() ? u8 (page->name) : juce::String ("Patch")));
+    const ps::Graph* g = &root;
+    for (auto& id : subPath)
+    {
+        const auto* n = g->find (id);
+        if (! n || n->inner.empty())
+            break;
+        names.add (n->name.empty() ? juce::String ("Subsystem") : u8 (n->name));
+        g = &n->inner.front();
+    }
+    const auto font = ps::theme::mono (11.0f, true);
+    float x = 13;
+    for (int i = 0; i < names.size(); ++i)
+    {
+        const float w = juce::GlyphArrangement::getStringWidth (font, names[i]) + 16;
+        out.push_back ({ names[i], { x, 11, w, 20 } });
+        x += w + 14; // room for the separator
+    }
+    return out;
+}
+
+void PatchCanvas::paintCrumbs (juce::Graphics& g)
+{
+    using namespace ps::theme;
+    const auto items = crumbs();
+    if (items.empty())
+        return;
+    const auto bar = items.front().second.getUnion (items.back().second).expanded (3);
+    g.setColour (ps::theme::bar);
+    g.fillRoundedRectangle (bar, 6);
+    g.setColour (lineStrong);
+    g.drawRoundedRectangle (bar.reduced (0.5f), 6, 1);
+    g.setFont (mono (11.0f, true));
+    const auto mouse = getMouseXYRelative().toFloat();
+    for (size_t i = 0; i < items.size(); ++i)
+    {
+        const auto& [name, r] = items[i];
+        const bool current = i + 1 == items.size();
+        if (! current && r.contains (mouse) && isMouseOver())
+        {
+            g.setColour (cellOff);
+            g.fillRoundedRectangle (r, 4);
+        }
+        g.setColour (current ? text : label);
+        g.drawText (name, r, juce::Justification::centred, false);
+        if (! current)
+        {
+            g.setColour (muted);
+            g.drawText (juce::String::fromUTF8 ("\xE2\x80\xBA"), juce::Rectangle<float> (r.getRight(), r.getY(), 14, r.getHeight()), juce::Justification::centred, false);
+        }
+    }
+}
+
 void PatchCanvas::resized() {}
 
 void PatchCanvas::timerCallback()
 {
+    if (! pathIsValid())
+        closeSubsystem(); // the subsystem being shown was removed
     viewValid = processor.copyView (view) || viewValid;
     processor.decayLevels();
     if (message.isNotEmpty() && juce::Time::getMillisecondCounter() > messageUntil)
@@ -291,6 +436,9 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 L.zones.push_back ({ it.r.withWidth (it.r.getWidth() / 2), ZoneType::sample, {}, -1 });
                 L.zones.push_back ({ it.r.withTrimmedLeft (it.r.getWidth() / 2), ZoneType::sample, {}, 1 });
                 break;
+            case ItemType::openButton:
+                L.zones.push_back ({ it.r, ZoneType::open, {}, 0 });
+                break;
             case ItemType::text:
             case ItemType::bigText:
             case ItemType::drumRows:
@@ -353,7 +501,7 @@ int PatchCanvas::viewIn (int node, int port) const
 
 PatchCanvas::HitResult PatchCanvas::hitTest (juce::Point<float> w) const
 {
-    const auto& g = processor.patch();
+    const auto& g = graph();
     HitResult r;
     for (int i = (int) g.nodes.size() - 1; i >= 0; --i)
     {
@@ -443,7 +591,7 @@ void PatchCanvas::paint (juce::Graphics& g)
         paintBlocks (g);
         paintNotes (g);
         paintWires (g);
-        const auto& nodes = processor.patch().nodes;
+        const auto& nodes = graph().nodes;
         for (int i = 0; i < (int) nodes.size(); ++i)
             if (onPage (nodes[(size_t) i]))
                 paintNode (g, i, nodes[(size_t) i], layoutOf (nodes[(size_t) i]));
@@ -459,8 +607,12 @@ void PatchCanvas::paint (juce::Graphics& g)
         }
     }
 
-    const auto hint = message.isNotEmpty() ? message
-                                           : juce::String ("Drag empty space to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.");
+    paintCrumbs (g);
+
+    const auto idle = subPath.empty()
+                          ? juce::String ("Drag empty space to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.")
+                          : juce::String ("Inside a subsystem: edits change this copy only. Esc or the path at the top left goes back out.");
+    const auto hint = message.isNotEmpty() ? message : idle;
     g.setFont (mono (10.0f));
     auto hintArea = getLocalBounds().reduced (8, 6).removeFromBottom (20).toFloat();
     hintArea = hintArea.withWidth (std::min (hintArea.getWidth(), juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), hint) + 16));
@@ -472,7 +624,7 @@ void PatchCanvas::paint (juce::Graphics& g)
 
 void PatchCanvas::paintBlocks (juce::Graphics& g)
 {
-    for (auto& b : processor.patch().blocks)
+    for (auto& b : graph().blocks)
     {
         if (! b.page.empty() && b.page != currentPage)
             continue;
@@ -495,7 +647,7 @@ void PatchCanvas::paintNotes (juce::Graphics& g)
 {
     g.setFont (ps::theme::sans (11.5f));
     g.setColour (ps::theme::noteText);
-    for (auto& t : processor.patch().notes)
+    for (auto& t : graph().notes)
     {
         if (! t.page.empty() && t.page != currentPage)
             continue;
@@ -509,7 +661,7 @@ void PatchCanvas::paintNotes (juce::Graphics& g)
 
 void PatchCanvas::paintWires (juce::Graphics& g)
 {
-    const auto& patch = processor.patch();
+    const auto& patch = graph();
     for (int l = 0; l < (int) patch.links.size(); ++l)
     {
         const auto& link = patch.links[(size_t) l];
@@ -824,6 +976,13 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 g.fillEllipse (juce::Rectangle<float> (10, 10).withCentre (dot));
                 break;
             }
+            case ItemType::openButton:
+                g.setColour (lineStrong);
+                g.fillRoundedRectangle (r, 4);
+                g.setColour (text);
+                g.setFont (mono (10.5f, true));
+                g.drawText (it.text, r, juce::Justification::centred, false);
+                break;
             case ItemType::sample:
             {
                 g.setColour (juce::Colour (0xff181b20));
@@ -886,7 +1045,7 @@ void PatchCanvas::fitView()
 {
     juce::Rectangle<float> box;
     bool any = false;
-    const auto& g = processor.patch();
+    const auto& g = graph();
     for (auto& n : g.nodes)
         if (onPage (n))
         {
@@ -935,8 +1094,19 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (! e.mods.isPopupMenu())
+    {
+        const auto items = crumbs();
+        for (size_t i = 0; i < items.size(); ++i)
+            if (items[i].second.contains (e.position))
+            {
+                closeSubsystem (i);
+                return;
+            }
+    }
+
     pressed = hitTest (dragWorld);
-    auto& patch = processor.patch();
+    auto& patch = graph();
 
     if (e.mods.isPopupMenu() && pressed.node >= 0)
     {
@@ -1027,7 +1197,7 @@ void PatchCanvas::mouseDrag (const juce::MouseEvent& e)
     if (e.position.getDistanceFrom (dragStart) > 3.0f)
         dragMoved = true;
     dragWorld = toWorld (e.position);
-    auto& patch = processor.patch();
+    auto& patch = graph();
     const auto delta = (e.position - dragStart) / scale;
     switch (drag)
     {
@@ -1102,14 +1272,22 @@ void PatchCanvas::mouseDoubleClick (const juce::MouseEvent& e)
     const auto hit = hitTest (toWorld (e.position));
     if (hit.what == Hit::header)
     {
-        auto& n = processor.patch().nodes[(size_t) hit.node];
+        auto& n = graph().nodes[(size_t) hit.node];
         n.collapsed = ! n.collapsed;
         edited();
     }
+    else if (hit.what == Hit::body && graph().nodes[(size_t) hit.node].kind == "sub")
+        openSubsystem (graph().nodes[(size_t) hit.node].id);
 }
 
 void PatchCanvas::mouseMove (const juce::MouseEvent& e)
 {
+    const auto items = crumbs();
+    if (std::any_of (items.begin(), items.end(), [&] (auto& c) { return c.second.contains (e.position); }))
+    {
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        return;
+    }
     const auto hit = hitTest (toWorld (e.position));
     const bool hand = hit.what == Hit::none;
     const bool point = hit.what == Hit::zone || hit.what == Hit::inPort || hit.what == Hit::outPort || hit.what == Hit::inTag
@@ -1154,6 +1332,11 @@ bool PatchCanvas::keyPressed (const juce::KeyPress& key)
     }
     if (key == juce::KeyPress::escapeKey)
     {
+        if (selection.empty() && selectedWire < 0 && ! subPath.empty())
+        {
+            closeSubsystem (subPath.size() - 1);
+            return true;
+        }
         selection.clear();
         selectedWire = -1;
         repaint();
@@ -1166,7 +1349,7 @@ bool PatchCanvas::keyPressed (const juce::KeyPress& key)
 
 void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     if (index < 0 || index >= (int) patch.nodes.size())
         return;
     auto& n = patch.nodes[(size_t) index];
@@ -1224,6 +1407,9 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
             }
             break;
         }
+        case ZoneType::open:
+            openSubsystem (n.id);
+            return;
         case ZoneType::xy:
         {
             const auto inner = z.r.reduced (7);
@@ -1241,7 +1427,7 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
 
 void PatchCanvas::connect (int fromNode, int fromPort, int toNode, int toPort)
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     const auto& a = patch.nodes[(size_t) fromNode];
     const auto& b = patch.nodes[(size_t) toNode];
     if (fromNode == toNode)
@@ -1261,7 +1447,7 @@ void PatchCanvas::connect (int fromNode, int fromPort, int toNode, int toPort)
 
 void PatchCanvas::deleteSelection()
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     if (selectedWire >= 0 && selectedWire < (int) patch.links.size())
     {
         patch.links.erase (patch.links.begin() + selectedWire);
@@ -1269,13 +1455,22 @@ void PatchCanvas::deleteSelection()
         edited();
         return;
     }
-    if (selection.empty())
+    // A subsystem's Inputs and Outputs modules are its ports, so they stay.
+    std::set<std::string> doomed;
+    for (auto& n : patch.nodes)
+        if (selection.count (n.id) && n.kind != "subin" && n.kind != "subout")
+            doomed.insert (n.id);
+    if (doomed.empty())
+    {
+        if (! selection.empty())
+            showMessage ("The Inputs and Outputs modules are the subsystem's ports, so they can't be removed");
         return;
-    const auto count = selection.size();
-    patch.nodes.erase (std::remove_if (patch.nodes.begin(), patch.nodes.end(), [this] (const ps::Node& n) { return selection.count (n.id) > 0; }),
+    }
+    const auto count = doomed.size();
+    patch.nodes.erase (std::remove_if (patch.nodes.begin(), patch.nodes.end(), [&] (const ps::Node& n) { return doomed.count (n.id) > 0; }),
                        patch.nodes.end());
     patch.links.erase (std::remove_if (patch.links.begin(), patch.links.end(),
-                                       [this] (const ps::Link& l) { return selection.count (l.a) || selection.count (l.b); }),
+                                       [&] (const ps::Link& l) { return doomed.count (l.a) || doomed.count (l.b); }),
                        patch.links.end());
     selection.clear();
     showMessage ("Removed " + juce::String ((int) count) + (count == 1 ? " module" : " modules"));
@@ -1284,11 +1479,11 @@ void PatchCanvas::deleteSelection()
 
 void PatchCanvas::addModule (const std::string& kind)
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     const auto centre = toWorld (getLocalBounds().getCentre().toFloat());
     auto prefix = kind.substr (0, std::min<size_t> (2, kind.size()));
     auto n = ps::makeNode (kind, patch.freshId (prefix), std::round (centre.x - 75), std::round (centre.y - 60));
-    n.page = currentPage;
+    n.page = subPath.empty() ? currentPage : std::string(); // tabs only exist at the top
     selection = { n.id };
     patch.nodes.push_back (n);
     edited();
@@ -1296,13 +1491,13 @@ void PatchCanvas::addModule (const std::string& kind)
 
 void PatchCanvas::addSubsystem (const ps::presets::SubsystemTemplate& t)
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     const auto centre = toWorld (getLocalBounds().getCentre().toFloat());
     auto n = t.node;
     n.id = patch.freshId ("sub");
     n.x = std::round (centre.x - 80);
     n.y = std::round (centre.y - 60);
-    n.page = currentPage;
+    n.page = subPath.empty() ? currentPage : std::string();
     selection = { n.id };
     patch.nodes.push_back (n);
     edited();
@@ -1310,7 +1505,7 @@ void PatchCanvas::addSubsystem (const ps::presets::SubsystemTemplate& t)
 
 void PatchCanvas::collapseAll (bool collapse)
 {
-    for (auto& n : processor.patch().nodes)
+    for (auto& n : graph().nodes)
         if (onPage (n))
             n.collapsed = collapse;
     edited();
@@ -1318,8 +1513,8 @@ void PatchCanvas::collapseAll (bool collapse)
 
 void PatchCanvas::moveSelectionToPage (const std::string& pageId)
 {
-    auto& patch = processor.patch();
-    if (selection.empty() || pageId == currentPage)
+    auto& patch = graph();
+    if (selection.empty() || pageId == currentPage || ! subPath.empty())
         return;
     // Wires between moved modules and ones left behind become tags, so the patch keeps playing.
     int converted = 0;
@@ -1368,26 +1563,33 @@ void PatchCanvas::moveSelectionToPage (const std::string& pageId)
 
 void PatchCanvas::showNodeMenu (int index)
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     const auto& n = patch.nodes[(size_t) index];
     juce::PopupMenu menu, pages;
-    for (auto& p : patch.pages)
+    const auto& rootPages = processor.patch().pages;
+    for (auto& p : rootPages)
         pages.addItem (u8 (p.name), p.id != currentPage, false, [this, id = p.id] { moveSelectionToPage (id); });
+    if (n.kind == "sub")
+        menu.addItem ("Open", [this, id = n.id] { openSubsystem (id); });
     menu.addItem (n.collapsed ? "Expand" : "Collapse", [this, id = n.id] {
-        if (auto* m = processor.patch().find (id))
+        if (auto* m = graph().find (id))
         {
             m->collapsed = ! m->collapsed;
             edited();
         }
     });
-    menu.addSubMenu ("Move to tab", pages, patch.pages.size() > 1);
+    if (subPath.empty())
+        menu.addSubMenu ("Move to tab", pages, rootPages.size() > 1);
     if (n.kind == "sub" && onExportSubsystem)
         menu.addItem ("Save subsystem...", [this, id = n.id] {
-            if (auto* m = processor.patch().find (id))
+            if (auto* m = graph().find (id))
                 onExportSubsystem (*m);
         });
-    menu.addSeparator();
-    menu.addItem (selection.size() > 1 ? "Delete selected modules" : "Delete", [this] { deleteSelection(); });
+    if (n.kind != "subin" && n.kind != "subout")
+    {
+        menu.addSeparator();
+        menu.addItem (selection.size() > 1 ? "Delete selected modules" : "Delete", [this] { deleteSelection(); });
+    }
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
 
@@ -1402,7 +1604,7 @@ void PatchCanvas::showMessage (const juce::String& text)
 
 void PatchCanvas::editTag (int index, bool output, int port)
 {
-    auto& patch = processor.patch();
+    auto& patch = graph();
     if (index < 0 || index >= (int) patch.nodes.size())
         return;
     const auto& n = patch.nodes[(size_t) index];
@@ -1455,7 +1657,7 @@ void PatchCanvas::finishTagEdit (bool keep)
     grabKeyboardFocus();
     if (! keep)
         return;
-    auto& patch = processor.patch();
+    auto& patch = graph();
     auto* n = patch.find (tagNode);
     if (! n)
         return;

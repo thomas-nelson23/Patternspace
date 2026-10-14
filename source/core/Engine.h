@@ -68,7 +68,8 @@ public:
     std::int64_t lastStep() const;
     void setRandomSeed (std::uint32_t seed); // the stream the Probability modules draw from
 
-    // What each root-level module is doing after the last step, in patch order, for drawing.
+    // What each module of the graph being shown is doing after the last step, in patch order, for
+    // drawing. That graph is the root patch unless setViewPath() has opened a subsystem.
     struct View
     {
         int pos = -1;   // loop position, -1 before the first clock
@@ -79,6 +80,11 @@ public:
         std::array<int, 16> out {}, in {};
     };
     const std::vector<View>& view() const;
+
+    // Shows the modules inside a subsystem: ids from the root down, {"sn"} for the subsystem sn,
+    // {"sn", "in2"} for one nested in it. An empty path, or one that no longer leads to a
+    // subsystem, shows the root patch. Allocates, so call it on the message thread.
+    void setViewPath (const std::vector<std::string>& path);
 
     // For tests: a module's values after the last step, as the prototype records them. `path` is
     // a module id, with "/" reaching into subsystems ("sn/pr").

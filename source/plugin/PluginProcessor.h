@@ -53,7 +53,9 @@ public:
     void loadPatch (const ps::Graph& newPatch, const juce::String& newName);
 
     // ---- live state for drawing (message thread)
-    // Copies what each root module is doing. Returns false if the engine hasn't caught up with
+    // Which subsystem the editor has open, as ids from the root down; empty for the root patch.
+    void setViewPath (const std::vector<std::string>& path);
+    // Copies what each module of the open graph is doing. Returns false if the engine hasn't caught up with
     // the latest edit yet, or the audio thread holds it right now.
     bool copyView (std::vector<ps::Engine::View>& out) const;
     float busLevel (int bus) const; // audio out 1-8, peak since the last call to decayLevels
@@ -73,6 +75,7 @@ private:
     ps::Graph graph;
     juce::String name;
     int editVersion = 0;
+    std::vector<std::string> viewPath;
 
     // shared with the audio thread
     mutable juce::SpinLock engineLock;

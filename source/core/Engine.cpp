@@ -293,6 +293,7 @@ namespace
 struct Engine::Impl
 {
     CGraph root;
+    const CGraph* shown = &root; // the graph view() describes
     Rng random { 1234 };
     std::int64_t last = -1;
     std::vector<View> view;
@@ -539,9 +540,9 @@ struct Engine::Impl
 
     void updateView()
     {
-        for (size_t i = 0; i < root.nodes.size() && i < view.size(); ++i)
+        for (size_t i = 0; i < shown->nodes.size() && i < view.size(); ++i)
         {
-            const CNode& x = root.nodes[i];
+            const CNode& x = shown->nodes[i];
             View& v = view[i];
             v.pos = x.pos;
             v.fired = x.fired;
@@ -565,6 +566,7 @@ void Engine::load (const Graph& patch)
 {
     impl->root = CGraph {};
     compile (patch, impl->root);
+    impl->shown = &impl->root;
     impl->view.assign (impl->root.nodes.size(), View {});
     impl->last = -1;
 }
@@ -607,6 +609,25 @@ std::int64_t Engine::lastStep() const { return impl->last; }
 void Engine::setRandomSeed (std::uint32_t seed) { impl->random = Rng (seed); }
 
 const std::vector<Engine::View>& Engine::view() const { return impl->view; }
+
+void Engine::setViewPath (const std::vector<std::string>& path)
+{
+    const CGraph* g = &impl->root;
+    for (auto& id : path)
+    {
+        auto it = g->byId.find (id);
+        const CGraph* inner = it != g->byId.end() ? g->nodes[(size_t) it->second].inner.get() : nullptr;
+        if (! inner)
+        {
+            g = &impl->root;
+            break;
+        }
+        g = inner;
+    }
+    impl->shown = g;
+    impl->view.assign (g->nodes.size(), View {});
+    impl->updateView();
+}
 
 std::string Engine::valuesAt (const std::string& path) const
 {
