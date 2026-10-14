@@ -3,8 +3,8 @@ name: Build
 on:
   push:
     branches: [main]
-    # Pushing a tag like v0.2.0 also publishes a GitHub release with a zip per platform, which is
-    # what the standalone app's update check looks for.
+    # Pushing a tag like v0.2.0 also publishes a GitHub release with an installer and a zip per
+    # platform, which is what the standalone app's update check looks for.
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -97,6 +97,38 @@ jobs:
           path: dist
           if-no-files-found: error
 
+      # Built on every run so pull requests catch a broken installer before a release does.
+      - name: Build the installer
+        shell: bash
+        run: |
+          version=$(sed -nE 's/^project\(Patternspace VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+          artefacts=dist
+          mkdir -p installer
+          case "$RUNNER_OS" in
+            macOS)
+              packaging/macos/build-pkg.sh "$artefacts" "$version" "installer/Patternspace-$version-macOS.pkg"
+              pkgutil --expand-full "installer/Patternspace-$version-macOS.pkg" "$RUNNER_TEMP/pkg"
+              find "$RUNNER_TEMP/pkg" -maxdepth 3 -name "Patternspace.*" ;;
+            Windows)
+              iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+              if [ ! -f "$iscc" ]; then
+                choco install innosetup --no-progress -y
+              fi
+              MSYS_NO_PATHCONV=1 "$iscc" /Q "/DAppVersion=$version" "/DArtefacts=$(cygpath -w "$PWD/$artefacts")" \
+                "/DOutputDir=$(cygpath -w "$PWD/installer")" packaging/windows/Patternspace.iss ;;
+            Linux)
+              packaging/linux/build-deb.sh "$artefacts" "$version" installer
+              dpkg-deb --info installer/*.deb
+              dpkg-deb --contents installer/*.deb ;;
+          esac
+          ls -l installer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patternspace-${{ matrix.name }}-installer
+          path: installer
+          if-no-files-found: error
+
       # Zipped on each runner so the app bundles keep their permissions and symlinks.
       - name: Zip for the release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -109,13 +141,14 @@ jobs:
             Windows) (cd dist && 7z a -tzip "../$zip" . > /dev/null) ;;
             *) (cd dist && zip -qry "../$zip" .) ;;
           esac
-          echo "ZIP=$zip" >> "$GITHUB_ENV"
+          mkdir -p release
+          mv "$zip" installer/* release/
 
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: release-${{ matrix.name }}
-          path: ${{ env.ZIP }}
+          path: release
           if-no-files-found: error
 
   release:
@@ -146,4 +179,4 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/*.zip --title "Patternspace ${GITHUB_REF_NAME#v}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" release/* --title "Patternspace ${GITHUB_REF_NAME#v}" --generate-notes

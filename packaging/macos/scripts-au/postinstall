@@ -1,0 +1,5 @@
+#!/bin/sh
+# Make the new Audio Unit show up without logging out: the registrar restarts on demand and
+# rescans /Library/Audio/Plug-Ins/Components.
+killall -9 AudioComponentRegistrar 2>/dev/null || true
+exit 0

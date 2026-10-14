@@ -245,6 +245,31 @@ void Updater::downloadFinished (bool success)
         return;
     }
 
+    if (pending.isInstaller)
+    {
+        // Patternspace quits as the installer opens, so the installer can replace the app.
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                          .withIconType (juce::MessageBoxIconType::InfoIcon)
+                                          .withTitle ("Patternspace " + pending.version + " downloaded")
+                                          .withMessage ("The installer is in " + target.getFullPathName()
+                                                        + ". It updates the app and the plug-ins.\n\n"
+                                                          "Install now quits Patternspace and opens it.")
+                                          .withButton ("Install now")
+                                          .withButton ("Show in folder")
+                                          .withButton ("Later")
+                                          .withAssociatedComponent (parent),
+                                      [file = target] (int choice) {
+                                          if (choice == 1 && file.startAsProcess())
+                                          {
+                                              if (auto* app = juce::JUCEApplicationBase::getInstance())
+                                                  app->systemRequestedQuit();
+                                          }
+                                          else if (choice == 1 || choice == 2)
+                                              file.revealToUser();
+                                      });
+        return;
+    }
+
     juce::AlertWindow::showAsync (juce::MessageBoxOptions()
                                       .withIconType (juce::MessageBoxIconType::InfoIcon)
                                       .withTitle ("Patternspace " + pending.version + " downloaded")
