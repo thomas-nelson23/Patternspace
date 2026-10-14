@@ -2,6 +2,7 @@
 
 #include "PatchCanvas.h"
 #include "PluginProcessor.h"
+#include "Updater.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -28,6 +29,8 @@ private:
     void savePatch();
     void importSubsystem();
     void exportSubsystem (const ps::Node&);
+    void showUpdatesMenu();
+    void refreshUpdateButton();
 
     PatternspaceProcessor& processor;
     juce::LookAndFeel_V4 look;
@@ -48,6 +51,10 @@ private:
     juce::AudioProcessorValueTreeState::SliderAttachment tempoAttachment;
 
     std::unique_ptr<juce::FileChooser> chooser;
+
+    // Standalone only: plug-ins are updated by reinstalling them, not from inside a host.
+    std::unique_ptr<Updater> updater;
+    juce::TextButton updatesButton { "Updates" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatternspaceEditor)
 };

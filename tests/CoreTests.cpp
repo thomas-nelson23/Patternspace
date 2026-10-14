@@ -6,6 +6,7 @@
 #include "../source/core/Modules.h"
 #include "../source/core/Patterns.h"
 #include "../source/state/PatchJson.h"
+#include "../source/update/UpdateCheck.h"
 
 #include <juce_core/juce_core.h>
 
@@ -272,6 +273,34 @@ void testTagsAndFeedback()
     checkEq (juce::String (engine.valuesAt ("e")), juce::String ("1"), "the tag reaches the other tab");
     checkEq (juce::String (engine.valuesAt ("a")), juce::String ("0"), "a feedback loop reads silence");
 }
+void testUpdateCheck()
+{
+    using ps::update::compareVersions;
+    check (compareVersions ("0.2.0", "0.1.0") > 0, "a newer minor version wins");
+    check (compareVersions ("v0.10.0", "0.9.3") > 0, "versions compare as numbers, not text");
+    check (compareVersions ("v1.0", "1.0.0") == 0, "a leading v and missing parts don't matter");
+    check (compareVersions ("1.0.0-beta.2", "1.0.0") == 0, "suffixes are ignored");
+    check (compareVersions ("0.1.0", "0.1.1") < 0, "an older version loses");
+
+    auto release = juce::JSON::parse (R"({
+        "tag_name": "v0.2.0", "html_url": "https://github.com/o/r/releases/tag/v0.2.0", "body": "Notes ",
+        "draft": false, "prerelease": false,
+        "assets": [
+            { "name": "Patternspace-0.2.0-Linux.zip", "browser_download_url": "https://x/linux.zip", "size": 10 },
+            { "name": "Patternspace-0.2.0-macOS.zip", "browser_download_url": "https://x/mac.zip", "size": 20 },
+            { "name": "Patternspace-0.2.0-Windows.zip", "browser_download_url": "https://x/win.zip", "size": 30 }
+        ] })");
+    ps::update::Release r;
+    check (ps::update::parseRelease (release, "macOS", r), "a release parses");
+    checkEq (r.version, juce::String ("0.2.0"), "the version comes from the tag");
+    checkEq (r.assetUrl, juce::String ("https://x/mac.zip"), "the macOS zip is picked");
+    checkEq (r.notes, juce::String ("Notes"), "the notes are kept");
+    check (ps::update::parseRelease (release, "Windows", r) && r.assetSize == 30, "the Windows zip is picked");
+    check (ps::update::parseRelease (release, "Haiku", r) && r.assetUrl.isEmpty(), "no zip for an unknown platform");
+    check (! ps::update::parseRelease (juce::JSON::parse (R"({"tag_name":"v1.0.0","prerelease":true})"), "Linux", r),
+           "a pre-release is ignored");
+    check (! ps::update::parseRelease (juce::JSON::parse (R"({"message":"Not Found"})"), "Linux", r), "a 404 body is rejected");
+}
 } // namespace
 
 int main()
@@ -285,6 +314,7 @@ int main()
     testJsonRoundTrip();
     testEditing();
     testTagsAndFeedback();
+    testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
