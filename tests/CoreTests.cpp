@@ -1,0 +1,291 @@
+// Tests for the patch engine and patch files. The reference test replays every factory preset and
+// checks each module's values against a run of the browser prototype (tests/data/reference-steps.json,
+// written by tools/export-prototype.cjs).
+
+#include "../source/core/Engine.h"
+#include "../source/core/Modules.h"
+#include "../source/core/Patterns.h"
+#include "../source/state/PatchJson.h"
+
+#include <juce_core/juce_core.h>
+
+#include <cmath>
+#include <functional>
+#include <iostream>
+
+namespace
+{
+int failures = 0, checks = 0;
+
+void check (bool ok, const juce::String& what)
+{
+    ++checks;
+    if (! ok)
+    {
+        ++failures;
+        std::cerr << "FAIL: " << what << "\n";
+    }
+}
+
+template <typename A, typename B>
+void checkEq (const A& a, const B& b, const juce::String& what)
+{
+    check (a == b, what + " (got " + juce::String (a) + ", expected " + juce::String (b) + ")");
+}
+
+juce::String joined (const std::vector<int>& v)
+{
+    juce::StringArray s;
+    for (int x : v)
+        s.add (juce::String (x));
+    return s.joinIntoString (",");
+}
+
+juce::File repo() { return juce::File (PATTERNSPACE_REPO_DIR); }
+
+std::vector<ps::json::Preset> factoryPresets()
+{
+    std::vector<ps::json::Preset> out;
+    auto files = repo().getChildFile ("presets/factory").findChildFiles (juce::File::findFiles, false, "*.json");
+    files.sort();
+    for (auto& f : files)
+    {
+        ps::json::Preset p;
+        check (ps::json::presetFromString (f.loadFileAsString(), p), "parse " + f.getFileName());
+        out.push_back (std::move (p));
+    }
+    return out;
+}
+
+void testRandom()
+{
+    ps::Rng r (1234);
+    const double expected[] = { 0.073294978123158216, 0.70341198984533548, 0.90285601909272373 };
+    for (double e : expected)
+        check (std::abs (r.next() - e) < 1e-15, "mulberry32 matches the prototype");
+}
+
+void testPatterns()
+{
+    checkEq (joined (ps::euclid (5, 8, 0)), juce::String ("1,0,1,0,1,1,0,1"), "E(5,8)");
+    checkEq (joined (ps::euclid (3, 8, 2)), juce::String ("1,0,1,0,0,1,0,0"), "E(3,8) rotated by 2");
+    checkEq (joined (ps::euclid (4, 16, 0)), juce::String ("1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0"), "E(4,16)");
+    checkEq (joined (ps::randomPattern (8, 5, 90)), juce::String ("1,1,1,1,0,0,0,1"), "random loop, seed 90");
+    checkEq (joined (ps::randomPattern (8, 0, 90)), juce::String ("0,0,0,0,0,0,0,0"), "zero density stays silent");
+    checkEq ((int) ps::cellularRows().size(), 34, "cellular rows");
+
+    const auto empty = ps::drumMapPattern (50, 50, 0, 0, 0, 0, 0);
+    int hits = 0;
+    for (auto& row : empty)
+        for (int v : row)
+            hits += v;
+    checkEq (hits, 0, "drum map with every fill at zero is silent");
+}
+
+void testNotes()
+{
+    checkEq (juce::String (ps::noteName (36)), juce::String ("C1"), "note 36 is C1");
+    checkEq (juce::String (ps::noteName (0)), juce::String ("C-2"), "note 0 is C-2");
+    checkEq (ps::noteNumber ("F#1"), 42, "F#1 is 42");
+    checkEq (ps::noteNumber ("C-2"), 0, "C-2 is 0");
+    checkEq (ps::noteNumber ("nonsense", 7), 7, "unparseable note falls back");
+}
+
+void testReferenceRun()
+{
+    juce::var ref;
+    check (juce::JSON::parse (repo().getChildFile ("tests/data/reference-steps.json").loadFileAsString(), ref).wasOk(),
+           "parse the reference run");
+    const int steps = (int) ref["steps"];
+    const auto seed = (std::uint32_t) (int) ref["probabilitySeed"];
+
+    auto presets = factoryPresets();
+    check (presets.size() == 5, "five factory presets");
+    for (auto& preset : presets)
+    {
+        auto expected = ref["presets"][juce::Identifier (preset.name)];
+        auto* modules = expected.getDynamicObject();
+        check (modules != nullptr, "reference has " + preset.name);
+        if (! modules)
+            continue;
+
+        ps::Engine engine;
+        engine.load (preset.patch);
+        engine.setRandomSeed (seed);
+        ps::StepOutput out;
+        int mismatches = 0;
+        for (int s = 0; s < steps; ++s)
+        {
+            out.clear();
+            engine.step (s, out);
+            for (auto& m : modules->getProperties())
+            {
+                const auto want = m.value[s].toString();
+                const auto got = juce::String (engine.valuesAt (m.name.toString().toStdString()));
+                if (got != want && mismatches++ < 5)
+                    std::cerr << "  " << preset.name << " step " << s << " " << m.name.toString() << ": got " << got
+                              << ", prototype " << want << "\n";
+            }
+        }
+        checkEq (mismatches, 0, preset.name + " plays the same as the prototype");
+    }
+}
+
+void testMidiOutput()
+{
+    auto presets = factoryPresets();
+    auto it = std::find_if (presets.begin(), presets.end(), [] (auto& p) { return p.name == "Four on the Floor"; });
+    check (it != presets.end(), "Four on the Floor exists");
+    if (it == presets.end())
+        return;
+
+    ps::Engine engine;
+    engine.load (it->patch);
+    ps::StepOutput out;
+    int kicks = 0, hats = 0, claps = 0;
+    for (int s = 0; s < 16; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        for (auto& n : out.notes)
+        {
+            check (n.channel == 10, "drum notes on channel 10");
+            kicks += n.note == 36;
+            hats += n.note == 42;
+            claps += n.note == 39;
+        }
+    }
+    checkEq (kicks, 4, "four kicks in a bar");
+    checkEq (hats, 5, "hats from the step grid");
+    checkEq (claps, 2, "claps on 2 and 4");
+
+    // The same preset also drives three sample players into audio outs 1-3.
+    out.clear();
+    engine.locate (0);
+    engine.step (0, out);
+    check (! out.hits.empty() && out.hits.front().bus == 1, "the kick sample plays on audio out 1");
+}
+
+void testLocate()
+{
+    auto presets = factoryPresets();
+    auto it = std::find_if (presets.begin(), presets.end(), [] (auto& p) { return p.name == "Four on the Floor"; });
+    if (it == presets.end())
+        return;
+    ps::Engine continuous, jumped;
+    continuous.load (it->patch);
+    jumped.load (it->patch);
+    ps::StepOutput a, b;
+    for (int s = 0; s < 40; ++s)
+    {
+        a.clear();
+        continuous.step (s, a);
+    }
+    jumped.locate (40);
+    for (int s = 40; s < 72; ++s)
+    {
+        a.clear();
+        b.clear();
+        continuous.step (s, a);
+        jumped.step (s, b);
+        check (a.notes.size() == b.notes.size(), "locating mid-bar keeps the generators in phase at step " + juce::String (s));
+    }
+}
+
+void testJsonRoundTrip()
+{
+    for (auto& p : factoryPresets())
+    {
+        const auto once = ps::json::toString (p.patch);
+        ps::Graph again;
+        check (ps::json::fromString (once, again), "re-read " + p.name);
+        checkEq (ps::json::toString (again), once, p.name + " survives a save and load");
+    }
+
+    ps::Graph legacy;
+    check (ps::json::fromString (R"({"nodes":[{"id":"m","k":"midi","x":0,"y":0,"p":{"note":"F#1","name":"Hat","ch":10}}],"links":[]})", legacy),
+           "read a patch from before MIDI outs had several outputs");
+    check (legacy.nodes.size() == 1 && legacy.nodes[0].lanes.size() == 1 && legacy.nodes[0].lanes[0].note == 42
+               && legacy.nodes[0].lanes[0].name == "Hat",
+           "an old one-note MIDI out becomes a one-output MIDI out");
+    check (legacy.pages.size() == 1 && legacy.nodes[0].page == "p1", "a patch without tabs gets one");
+
+    ps::Graph junk;
+    check (! ps::json::fromString ("not json", junk), "garbage is rejected");
+    check (! ps::json::fromString ("{\"nodes\":3}", junk), "a non-patch is rejected");
+}
+
+void testEditing()
+{
+    ps::Graph g;
+    g.nodes.push_back (ps::makeNode ("euclid", "e", 0, 0));
+    g.nodes.push_back (ps::makeNode ("switch", "s", 200, 0));
+    g.nodes.push_back (ps::makeNode ("midi", "m", 400, 0));
+    g.links.push_back ({ "e", 0, "s", 2 });
+    g.links.push_back ({ "s", 3, "m", 3 });
+    g.nodes[1].tagOut[3] = "FOUR";
+
+    auto& sw = *g.find ("s");
+    checkEq ((int) ps::outputsOf (sw).size(), 4, "a new Switch has four outputs");
+    check (ps::stepParam (g, sw, "ways", -1), "ways steps down");
+    checkEq ((int) ps::outputsOf (sw).size(), 3, "three ways, three outputs");
+    checkEq ((int) g.links.size(), 1, "the wire from output 4 is dropped");
+    check (sw.tagOut.empty(), "the tag on output 4 is dropped");
+
+    auto& e = *g.find ("e");
+    check (ps::stepParam (g, e, "len", -10), "steps go down");
+    checkEq (e.get ("len"), 6, "16 - 10 steps");
+    checkEq (e.get ("hits"), 4, "hits still fit");
+    check (ps::stepParam (g, e, "len", -3), "steps go down again");
+    checkEq (e.get ("hits"), 3, "hits never exceed steps");
+
+    auto& m = *g.find ("m");
+    checkEq ((int) m.lanes.size(), 4, "a new MIDI out has four outputs");
+    check (ps::stepParam (g, m, "nout", 2), "add two outputs");
+    checkEq ((int) m.lanes.size(), 6, "six outputs");
+    checkEq (m.lanes[4].note, 39, "the fifth output takes the next GM drum (clap)");
+    checkEq (juce::String (m.lanes[4].name), juce::String ("Clap"), "and its name");
+    check (ps::stepParam (g, m, "nout", -15), "remove outputs");
+    checkEq ((int) m.lanes.size(), 1, "at least one output stays");
+}
+
+void testTagsAndFeedback()
+{
+    // A tag carries a clock across tabs; a wire loop doesn't hang the engine.
+    ps::Graph g;
+    g.pages = { { "p1", "A" }, { "p2", "B" } };
+    auto clk = ps::makeNode ("clock", "clk", 0, 0);
+    clk.tagOut[0] = "CLK";
+    clk.page = "p1";
+    auto e = ps::makeNode ("euclid", "e", 0, 0);
+    e.set ("hits", 16);
+    e.tagIn[0] = "CLK";
+    e.page = "p2";
+    auto a = ps::makeNode ("accent", "a", 0, 0);
+    auto b = ps::makeNode ("accent", "b", 0, 0);
+    g.nodes = { clk, e, a, b };
+    g.links = { { "a", 0, "b", 0 }, { "b", 0, "a", 0 } };
+    ps::Engine engine;
+    engine.load (g);
+    ps::StepOutput out;
+    engine.step (0, out);
+    checkEq (juce::String (engine.valuesAt ("e")), juce::String ("1"), "the tag reaches the other tab");
+    checkEq (juce::String (engine.valuesAt ("a")), juce::String ("0"), "a feedback loop reads silence");
+}
+} // namespace
+
+int main()
+{
+    testRandom();
+    testPatterns();
+    testNotes();
+    testReferenceRun();
+    testMidiOutput();
+    testLocate();
+    testJsonRoundTrip();
+    testEditing();
+    testTagsAndFeedback();
+
+    std::cout << checks - failures << "/" << checks << " checks passed\n";
+    return failures == 0 ? 0 : 1;
+}

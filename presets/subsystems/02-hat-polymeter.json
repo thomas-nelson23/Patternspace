@@ -1,0 +1,128 @@
+{
+  "name": "Hat polymeter",
+  "ins": [
+    "clk",
+    "bar"
+  ],
+  "outs": [
+    "hats"
+  ],
+  "g": {
+    "nodes": [
+      {
+        "id": "in",
+        "k": "subin",
+        "x": 20,
+        "y": 60,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "outs": [
+          "clk",
+          "bar"
+        ],
+        "p": {}
+      },
+      {
+        "id": "e1",
+        "k": "euclid",
+        "x": 220,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "hits": 5,
+          "len": 12,
+          "rot": 0
+        }
+      },
+      {
+        "id": "e2",
+        "k": "euclid",
+        "x": 220,
+        "y": 220,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "hits": 3,
+          "len": 8,
+          "rot": 0
+        }
+      },
+      {
+        "id": "cm",
+        "k": "combine",
+        "x": 420,
+        "y": 120,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "mode": "OR"
+        }
+      },
+      {
+        "id": "out",
+        "k": "subout",
+        "x": 620,
+        "y": 140,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "ins": [
+          "hats"
+        ],
+        "p": {}
+      }
+    ],
+    "links": [
+      {
+        "a": "in",
+        "p": 0,
+        "b": "e1",
+        "q": 0
+      },
+      {
+        "a": "in",
+        "p": 1,
+        "b": "e1",
+        "q": 1
+      },
+      {
+        "a": "in",
+        "p": 0,
+        "b": "e2",
+        "q": 0
+      },
+      {
+        "a": "e1",
+        "p": 0,
+        "b": "cm",
+        "q": 0
+      },
+      {
+        "a": "e2",
+        "p": 0,
+        "b": "cm",
+        "q": 1
+      },
+      {
+        "a": "cm",
+        "p": 0,
+        "b": "out",
+        "q": 0
+      }
+    ],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "t1",
+        "x": 420,
+        "y": 330,
+        "text": "12 steps reset by the bar against 8 free-running steps."
+      }
+    ]
+  }
+}

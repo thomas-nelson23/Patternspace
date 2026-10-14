@@ -1,0 +1,337 @@
+{
+  "name": "Polymeter Study",
+  "patch": {
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "e1",
+        "k": "euclid",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {
+          "0": "THREE"
+        },
+        "p": {
+          "hits": 3,
+          "len": 8,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "e2",
+        "k": "euclid",
+        "x": 224,
+        "y": 200,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 5,
+          "len": 12,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "dv",
+        "k": "div",
+        "x": 224,
+        "y": 370,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK"
+        },
+        "tagOut": {},
+        "p": {
+          "div": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "cb",
+        "k": "combine",
+        "x": 434,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "BOTH"
+        },
+        "p": {
+          "mode": "AND"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "e3",
+        "k": "euclid",
+        "x": 434,
+        "y": 370,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK"
+        },
+        "tagOut": {
+          "0": "SEVEN"
+        },
+        "p": {
+          "hits": 7,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s1",
+        "k": "sample",
+        "x": 640,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "sample": "Rim",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s2",
+        "k": "sample",
+        "x": 640,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "sample": "Low Tom",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s3",
+        "k": "sample",
+        "x": 640,
+        "y": 370,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "sample": "Tight Hat",
+          "pitch": 0,
+          "decay": 2
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a1",
+        "k": "audio",
+        "x": 830,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a2",
+        "k": "audio",
+        "x": 830,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 5
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a3",
+        "k": "audio",
+        "x": 830,
+        "y": 370,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m1",
+        "k": "midi",
+        "x": 1050,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "THREE",
+          "1": "BOTH",
+          "2": "SEVEN"
+        },
+        "tagOut": {},
+        "p": {
+          "name": "Perc",
+          "ch": 10,
+          "lanes": [
+            {
+              "name": "Rim",
+              "note": 37
+            },
+            {
+              "name": "Tom",
+              "note": 45
+            },
+            {
+              "name": "Hat",
+              "note": 42
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "e1",
+        "p": 0,
+        "b": "cb",
+        "q": 0
+      },
+      {
+        "a": "e2",
+        "p": 0,
+        "b": "cb",
+        "q": 1
+      },
+      {
+        "a": "dv",
+        "p": 0,
+        "b": "e3",
+        "q": 1
+      },
+      {
+        "a": "e1",
+        "p": 0,
+        "b": "s1",
+        "q": 0
+      },
+      {
+        "a": "cb",
+        "p": 0,
+        "b": "s2",
+        "q": 0
+      },
+      {
+        "a": "e3",
+        "p": 0,
+        "b": "s3",
+        "q": 0
+      },
+      {
+        "a": "s1",
+        "p": 0,
+        "b": "a1",
+        "q": 0
+      },
+      {
+        "a": "s2",
+        "p": 0,
+        "b": "a2",
+        "q": 0
+      },
+      {
+        "a": "s3",
+        "p": 0,
+        "b": "a3",
+        "q": 0
+      }
+    ],
+    "blocks": [
+      {
+        "id": "b1",
+        "x": 6,
+        "y": 218,
+        "w": 168,
+        "h": 172,
+        "t": "Timing",
+        "c": "#7c8796",
+        "pg": "p1"
+      },
+      {
+        "id": "b2",
+        "x": 214,
+        "y": 8,
+        "w": 380,
+        "h": 540,
+        "t": "Three lengths",
+        "c": "#f2a541",
+        "pg": "p1"
+      },
+      {
+        "id": "b3",
+        "x": 630,
+        "y": 8,
+        "w": 360,
+        "h": 540,
+        "t": "Sound",
+        "c": "#7bd88f",
+        "pg": "p1"
+      }
+    ],
+    "notes": [
+      {
+        "id": "t1",
+        "x": 14,
+        "y": 40,
+        "text": "8, 12 and 16 step loops drift apart. The 2BAR tag pulls two of them back together every 2 bars.",
+        "w": 150,
+        "pg": "p1"
+      },
+      {
+        "id": "t2",
+        "x": 434,
+        "y": 100,
+        "text": "The divider restarts the 16-step loop every 3 steps.",
+        "w": 150,
+        "pg": "p1"
+      }
+    ],
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ]
+  }
+}

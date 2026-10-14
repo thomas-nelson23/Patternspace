@@ -1,0 +1,170 @@
+#pragma once
+
+#include "../core/Engine.h"
+#include "../core/Patch.h"
+#include "Presets.h"
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <functional>
+#include <set>
+
+class PatternspaceProcessor;
+
+// The workspace: modules, cables and tags on the current tab. Drag empty space to pan,
+// Ctrl/Cmd-scroll or pinch to zoom, drag an output onto an input to wire it, click a port to tag it.
+class PatchCanvas : public juce::Component,
+                    private juce::Timer
+{
+public:
+    explicit PatchCanvas (PatternspaceProcessor& processor);
+    ~PatchCanvas() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMagnify (const juce::MouseEvent&, float scaleFactor) override;
+    bool keyPressed (const juce::KeyPress&) override;
+
+    // Called when the processor loads a different patch.
+    void patchReplaced();
+
+    const std::string& page() const { return currentPage; }
+    void setPage (const std::string& pageId);
+
+    float zoom() const { return scale; }
+    void zoomAround (float newScale, juce::Point<float> screenPoint);
+    void zoomStep (int direction);
+    void fitView();
+
+    void addModule (const std::string& kind);
+    void addSubsystem (const ps::presets::SubsystemTemplate& subsystem);
+    void moveSelectionToPage (const std::string& pageId);
+    void collapseAll (bool collapse);
+
+    std::function<void()> onViewChanged;  // zoom changed
+    std::function<void()> onEdited;       // after any change to the patch
+    std::function<void()> onPagesChanged; // a tab was added, or modules moved between tabs
+    std::function<void (const ps::Node&)> onExportSubsystem;
+
+private:
+    enum class ZoneType
+    {
+        param,
+        mode,
+        bus,
+        cell,
+        sample,
+        laneNote,
+        xy
+    };
+    struct Zone
+    {
+        juce::Rectangle<float> r;
+        ZoneType type;
+        std::string key;
+        int value = 0;
+    };
+    struct Layout
+    {
+        juce::Rectangle<float> box, header;
+        std::vector<juce::Point<float>> ins, outs;
+        std::vector<Zone> zones;
+        float bodyTop = 0;
+    };
+    enum class Hit
+    {
+        none,
+        inPort,
+        outPort,
+        inTag,
+        outTag,
+        zone,
+        header,
+        body,
+        wire,
+        blockTitle
+    };
+    struct HitResult
+    {
+        Hit what = Hit::none;
+        int node = -1, port = -1, wire = -1, block = -1;
+        Zone zone {};
+    };
+    enum class Drag
+    {
+        none,
+        pan,
+        move,
+        wire,
+        xy,
+        block
+    };
+
+    void timerCallback() override;
+
+    juce::Point<float> toWorld (juce::Point<float> screen) const { return (screen - offset) / scale; }
+    juce::Point<float> toScreen (juce::Point<float> world) const { return world * scale + offset; }
+
+    Layout layoutOf (const ps::Node&) const;
+    float bodyHeight (const ps::Node&) const;
+    bool onPage (const ps::Node&) const;
+    HitResult hitTest (juce::Point<float> world) const;
+    juce::Rectangle<float> tagRect (const ps::Node&, const Layout&, bool output, int port, const std::string& tag) const;
+    juce::Colour tagColour (const std::string& tag) const;
+    juce::Path wirePath (juce::Point<float> from, juce::Point<float> to) const;
+    int viewOut (int node, int port) const;
+    int viewIn (int node, int port) const;
+
+    void paintBlocks (juce::Graphics&);
+    void paintNotes (juce::Graphics&);
+    void paintWires (juce::Graphics&);
+    void paintNode (juce::Graphics&, int index, const ps::Node&, const Layout&);
+    void paintBody (juce::Graphics&, int index, const ps::Node&, const Layout&);
+    void paintCells (juce::Graphics&, juce::Rectangle<float>, const std::vector<int>& cells, int now, juce::Colour, bool editable = false);
+
+    void applyZone (int node, const Zone&, juce::Point<float> world);
+    void connect (int fromNode, int fromPort, int toNode, int toPort);
+    void deleteSelection();
+    void editTag (int node, bool output, int port);
+    void finishTagEdit (bool keep);
+    void showMessage (const juce::String&);
+    void showNodeMenu (int node);
+    void edited(); // commit the patch to the engine
+
+    PatternspaceProcessor& processor;
+    std::vector<ps::Engine::View> view;
+    bool viewValid = false;
+
+    float scale = 1.0f;
+    juce::Point<float> offset { 0.0f, 0.0f }; // screen = world * scale + offset
+    std::string currentPage;
+    std::set<std::string> selection;
+    int selectedWire = -1;
+    int hoverNode = -1;
+
+    Drag drag = Drag::none;
+    juce::Point<float> dragStart, dragWorld;
+    juce::Point<float> panStart;
+    bool dragMoved = false;
+    HitResult pressed;
+    std::vector<std::pair<std::string, juce::Point<float>>> moveStart;
+    int dragBlock = -1;
+    juce::Point<float> blockStart;
+
+    std::unique_ptr<juce::TextEditor> tagEditor; // made once, shown while a tag is being named
+    bool tagEditing = false;
+    std::string tagNode;
+    bool tagOutput = false;
+    int tagPort = 0;
+
+    juce::String message;
+    juce::uint32 messageUntil = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatchCanvas)
+};

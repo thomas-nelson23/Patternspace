@@ -1,0 +1,351 @@
+{
+  "name": "Switch Study",
+  "patch": {
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "e1",
+        "k": "euclid",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 5,
+          "len": 8,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sw1",
+        "k": "switch",
+        "x": 434,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "KICK",
+          "1": "SNARE",
+          "2": "HAT"
+        },
+        "p": {
+          "mode": "split",
+          "ways": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "r2",
+        "k": "random",
+        "x": 224,
+        "y": 380,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "len": 8,
+          "density": 4,
+          "seed": 31
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "g3",
+        "k": "step",
+        "x": 224,
+        "y": 520,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "cells": [
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            1
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sw2",
+        "k": "switch",
+        "x": 434,
+        "y": 280,
+        "c": 0,
+        "tagIn": {
+          "0": "BAR"
+        },
+        "tagOut": {
+          "0": "CLAP"
+        },
+        "p": {
+          "mode": "merge",
+          "ways": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s1",
+        "k": "sample",
+        "x": 700,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "909 Kick",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s2",
+        "k": "sample",
+        "x": 700,
+        "y": 200,
+        "c": 0,
+        "tagIn": {
+          "0": "SNARE"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "Crack Snare",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s3",
+        "k": "sample",
+        "x": 700,
+        "y": 360,
+        "c": 0,
+        "tagIn": {
+          "0": "HAT"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "Tight Hat",
+          "pitch": 0,
+          "decay": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s4",
+        "k": "sample",
+        "x": 700,
+        "y": 520,
+        "c": 0,
+        "tagIn": {
+          "0": "CLAP"
+        },
+        "tagOut": {},
+        "p": {
+          "sample": "Clap",
+          "pitch": 0,
+          "decay": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a1",
+        "k": "audio",
+        "x": 900,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a2",
+        "k": "audio",
+        "x": 900,
+        "y": 200,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 2
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a3",
+        "k": "audio",
+        "x": 900,
+        "y": 360,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "a4",
+        "k": "audio",
+        "x": 900,
+        "y": 520,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 4
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "e1",
+        "p": 0,
+        "b": "sw1",
+        "q": 0
+      },
+      {
+        "a": "e1",
+        "p": 0,
+        "b": "sw1",
+        "q": 2
+      },
+      {
+        "a": "e1",
+        "p": 0,
+        "b": "sw2",
+        "q": 2
+      },
+      {
+        "a": "r2",
+        "p": 0,
+        "b": "sw2",
+        "q": 3
+      },
+      {
+        "a": "g3",
+        "p": 0,
+        "b": "sw2",
+        "q": 4
+      },
+      {
+        "a": "s1",
+        "p": 0,
+        "b": "a1",
+        "q": 0
+      },
+      {
+        "a": "s2",
+        "p": 0,
+        "b": "a2",
+        "q": 0
+      },
+      {
+        "a": "s3",
+        "p": 0,
+        "b": "a3",
+        "q": 0
+      },
+      {
+        "a": "s4",
+        "p": 0,
+        "b": "a4",
+        "q": 0
+      }
+    ],
+    "blocks": [
+      {
+        "id": "b1",
+        "x": 6,
+        "y": 218,
+        "w": 168,
+        "h": 172,
+        "t": "Timing",
+        "c": "#7c8796",
+        "pg": "p1"
+      },
+      {
+        "id": "b2",
+        "x": 214,
+        "y": 8,
+        "w": 390,
+        "h": 640,
+        "t": "Switches",
+        "c": "#9fb6ff",
+        "pg": "p1"
+      },
+      {
+        "id": "b3",
+        "x": 690,
+        "y": 8,
+        "w": 370,
+        "h": 680,
+        "t": "Sound",
+        "c": "#7bd88f",
+        "pg": "p1"
+      }
+    ],
+    "notes": [
+      {
+        "id": "t1",
+        "x": 14,
+        "y": 40,
+        "text": "The top Switch deals each hit of E(5,8) to the kick, snare and hat in turn. The lower one plays a different pattern into the clap every bar.",
+        "w": 150,
+        "pg": "p1"
+      }
+    ],
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ]
+  }
+}

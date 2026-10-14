@@ -1,0 +1,126 @@
+{
+  "name": "Snare engine",
+  "ins": [
+    "clk",
+    "kick"
+  ],
+  "outs": [
+    "snare"
+  ],
+  "g": {
+    "nodes": [
+      {
+        "id": "in",
+        "k": "subin",
+        "x": 20,
+        "y": 60,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "outs": [
+          "clk",
+          "kick"
+        ],
+        "p": {}
+      },
+      {
+        "id": "rn",
+        "k": "random",
+        "x": 220,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "len": 6,
+          "density": 5,
+          "seed": 90
+        }
+      },
+      {
+        "id": "cm",
+        "k": "combine",
+        "x": 420,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "mode": "A−B"
+        }
+      },
+      {
+        "id": "pr",
+        "k": "prob",
+        "x": 620,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "chance": 7
+        }
+      },
+      {
+        "id": "out",
+        "k": "subout",
+        "x": 820,
+        "y": 60,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "ins": [
+          "snare"
+        ],
+        "p": {}
+      }
+    ],
+    "links": [
+      {
+        "a": "in",
+        "p": 0,
+        "b": "rn",
+        "q": 0
+      },
+      {
+        "a": "in",
+        "p": 1,
+        "b": "rn",
+        "q": 1
+      },
+      {
+        "a": "rn",
+        "p": 0,
+        "b": "cm",
+        "q": 0
+      },
+      {
+        "a": "in",
+        "p": 1,
+        "b": "cm",
+        "q": 1
+      },
+      {
+        "a": "cm",
+        "p": 0,
+        "b": "pr",
+        "q": 0
+      },
+      {
+        "a": "pr",
+        "p": 0,
+        "b": "out",
+        "q": 0
+      }
+    ],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "t1",
+        "x": 220,
+        "y": 250,
+        "text": "Random loops 6 steps and restarts on every kick. Then the kick is subtracted, so the snare never lands on it."
+      }
+    ]
+  }
+}
