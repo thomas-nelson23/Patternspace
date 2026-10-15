@@ -28,9 +28,20 @@ The plug-in is an instrument with MIDI output:
   inputs, and a Switch can take its positions in random order.
 - The Clock's **1/16, 1/32, 1/8** rate sets what a step is, and its **Swing** (50 is straight,
   about 66 a triplet feel) delays every second step.
-- **Sample player** modules play built-in drum sounds into **Audio out** modules. There are 8
-  stereo outputs. Out 1 is always on; enable Outs 2 to 8 in your DAW to give each sound its own
-  mixer channel. Any output left off is mixed into Out 1.
+- **Sample player** modules play the six built-in drum sounds, or your own: drop a WAV, AIFF,
+  FLAC, Ogg or MP3 file on a Sample player (or on empty space for a new one), or click the sound's
+  name for the menu and **Load a file...**. Sounds up to 4 seconds are saved inside the patch so it
+  travels; longer ones are saved as a path and read again when the patch opens. Each player has
+  **Level**, **Pan**, **Start** (where playback begins), a low-pass **Filter**, a **Choke** group
+  (a new hit in the group cuts the others off, across players) and **Poly / Mono** (Mono retriggers
+  instead of stacking). A cut-off or stolen voice fades over a few milliseconds rather than clicking.
+- **Audio out** modules have their own **Level** and **Pan**. There are 8 stereo outputs. Out 1 is
+  always on; enable Outs 2 to 8 in your DAW to give each sound its own mixer channel. Any output
+  left off is mixed into Out 1. The factory kits put the kick on Out 1 and give the snare, hats
+  and percussion their own outs after it; the Audio out module's header names its out.
+- The **Out** button in the top bar shows the master meter and opens the output strip: a master
+  trim (host-automatable), a **Soft clip** toggle that bends peaks over 0 dB back under it, and a
+  meter per output. The button turns red for a moment when the output went past 0 dB.
 - The clock follows the host's tempo, transport and time signature while **Host sync** is on, so
   the Clock's bar and 2-bar outputs land on the host's downbeats in 3/4 or 7/8 too. In the
   standalone app, or with sync off, **Play** and the tempo control run the internal clock.

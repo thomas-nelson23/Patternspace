@@ -83,7 +83,15 @@ juce::String paramValue (const ps::Node& n, const ps::ParamSpec& spec)
     return juce::String (v) + spec.suffix;
 }
 
-std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const std::map<std::string, int>& patchSettings, const ps::Graph& level)
+juce::String sampleLabelIn (const ps::Graph& root, const ps::Node& n)
+{
+    for (auto& s : root.samples)
+        if (s.id == n.sample)
+            return u8 (s.name) + (s.missing ? " (missing)" : "");
+    return u8 (n.sample);
+}
+
+std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const std::map<std::string, int>& patchSettings, const ps::Graph& level, const ps::Graph& root)
 {
     std::vector<Item> items;
     auto settings = [&patchSettings] (const char* key) {
@@ -164,7 +172,8 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const
     }
     else if (k == "sample")
     {
-        add (ItemType::sample, 20, "sample", u8 (n.sample));
+        add (ItemType::sample, 20, "sample", sampleLabelIn (root, n));
+        add (ItemType::modes, 18, "mono");
         steppers();
     }
     else if (k == "audio")
@@ -173,6 +182,7 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const
         const int b = n.get ("bus", 1);
         add (ItemType::text, 12, {}, "Out " + juce::String (b) + ", ch " + juce::String (2 * b - 1) + "-" + juce::String (2 * b));
         add (ItemType::meter, 6, "meter");
+        steppers();
     }
     else if (k == "midi")
     {
@@ -633,7 +643,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
     }
     const int rows = (int) std::max (ins.size(), outs.size());
     L.bodyTop = rows > 0 ? ioTop + rows * rowH + 4 : headerH + 6;
-    const auto items = bodyItems (n, x, y + L.bodyTop, w, processor.patch().settings, graph());
+    const auto items = bodyItems (n, x, y + L.bodyTop, w, processor.patch().settings, graph(), processor.patch());
     float bottom = y + L.bodyTop;
     for (auto& it : items)
     {
@@ -673,8 +683,9 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 L.zones.push_back ({ it.r, ZoneType::xy, {}, 0 });
                 break;
             case ItemType::sample:
-                L.zones.push_back ({ it.r.withWidth (it.r.getWidth() / 2), ZoneType::sample, {}, -1 });
-                L.zones.push_back ({ it.r.withTrimmedLeft (it.r.getWidth() / 2), ZoneType::sample, {}, 1 });
+                L.zones.push_back ({ it.r.withWidth (18), ZoneType::sample, {}, -1 });
+                L.zones.push_back ({ it.r.withTrimmedLeft (it.r.getWidth() - 18), ZoneType::sample, {}, 1 });
+                L.zones.push_back ({ it.r.reduced (18, 0), ZoneType::sample, {}, 0 }); // the name: its menu
                 break;
             case ItemType::button:
                 L.zones.push_back ({ it.r,
@@ -934,6 +945,7 @@ void PatchCanvas::paintHelp (juce::Graphics& g)
         { "Drag output to input", "Wire. Drag a wired input to move or remove the wire" },
         { "Click a port", "Tag it: pick a tag, colour it, see who listens" },
         { "Click a MIDI output's name", "Its menu: note, channel, choke group, audition" },
+        { "Drop an audio file", "On a Sample player to load it there, or on empty space for a new one" },
         { "Target... on a control", "Pick the module and parameter a Macro, LFO, walk or S&H steers" },
         { "Double-click empty space", "Write a note. Right-click for a block" },
         { "Ctrl/Cmd G, B", "Group the selection into a subsystem; draw a block around it" },
@@ -1277,7 +1289,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
     using namespace ps::theme;
     const auto c = kindColour (n);
     const ps::Engine::View* v = viewValid && index < (int) view.size() ? &view[(size_t) index] : nullptr;
-    for (auto& it : bodyItems (n, L.box.getX(), L.box.getY() + L.bodyTop, L.box.getWidth(), processor.patch().settings, graph()))
+    for (auto& it : bodyItems (n, L.box.getX(), L.box.getY() + L.bodyTop, L.box.getWidth(), processor.patch().settings, graph(), processor.patch()))
     {
         const auto r = it.r;
         switch (it.type)
@@ -1331,7 +1343,8 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
             }
             case ItemType::modes:
             {
-                const bool combine = it.key == "combine", follow = it.key == "follow", rate = it.key == "rate", order = it.key == "order", shape = it.key == "shape";
+                const bool combine = it.key == "combine", follow = it.key == "follow", rate = it.key == "rate", order = it.key == "order", shape = it.key == "shape",
+                           mono = it.key == "mono";
                 const auto& modes = ps::combineModes();
                 const int count = combine ? (int) modes.size() : shape ? 4 : follow || rate ? 3 : 2;
                 static const char* shapeNames[] = { "Sine", "Tri", "Saw", "Square" };
@@ -1342,6 +1355,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 static const char* followNames[] = { "Phrase", "Song", "Free" };
                 static const char* rateNames[] = { "1/16", "1/32", "1/8" };
                 static const char* orderNames[] = { "In turn", "Random" };
+                static const char* monoNames[] = { "Poly", "Mono" };
                 for (int m = 0; m < count; ++m)
                 {
                     const auto b = juce::Rectangle<float> (r.getX() + r.getWidth() * m / count, r.getY(), r.getWidth() / count, r.getHeight()).reduced (1, 0);
@@ -1349,6 +1363,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                                   : follow  ? m == followNow
                                   : rate    ? m == rateNow
                                   : order   ? m == (n.get ("rnd") ? 1 : 0)
+                                  : mono    ? m == (n.get ("mono") ? 1 : 0)
                                   : shape   ? n.mode == shapeModes[m]
                                             : (m == 0) == (n.mode != "merge");
                     paintSegment (g, b, on, c);
@@ -1359,6 +1374,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                                        : follow  ? juce::String (followNames[m])
                                        : rate    ? juce::String (rateNames[m])
                                        : order   ? juce::String (orderNames[m])
+                                       : mono    ? juce::String (monoNames[m])
                                        : shape   ? juce::String (shapeNames[m])
                                                  : (m == 0 ? "1" + arrow + juce::String (ways) : juce::String (ways) + arrow + "1");
                     g.drawText (caption, b, juce::Justification::centred);
@@ -2268,6 +2284,12 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
                 n.set ("rnd", z.value);
                 break;
             }
+            if (z.key == "mono")
+            {
+                changed = n.get ("mono") != z.value;
+                n.set ("mono", z.value);
+                break;
+            }
             if (z.key == "shape")
             {
                 static const char* shapes[] = { "sine", "tri", "saw", "square" };
@@ -2319,7 +2341,12 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
             break;
         case ZoneType::sample:
         {
-            const auto& names = ps::sampleNames();
+            if (z.value == 0)
+            {
+                showSampleMenu (index);
+                break;
+            }
+            const auto names = sampleChoices();
             auto it = std::find (names.begin(), names.end(), n.sample);
             int i = it == names.end() ? 0 : (int) (it - names.begin());
             i = (i + z.value + (int) names.size()) % (int) names.size();
@@ -2705,6 +2732,8 @@ void PatchCanvas::showNodeMenu (int index)
         menu.addItem ("Open", [this, id = n.id] { openSubsystem (id); });
         menu.addItem ("Rename", [this, index] { renameSubsystem (index); });
     }
+    if (n.kind == "sample")
+        menu.addItem ("Load a sample file...", loadSample != nullptr, false, [this, index] { chooseSampleFile (index); });
     menu.addItem (n.collapsed ? "Expand" : "Collapse", [this, id = n.id] {
         if (auto* m = graph().find (id))
         {
@@ -3773,6 +3802,171 @@ void PatchCanvas::paintKindGlyph (juce::Graphics& g, const std::string& k, juce:
 }
 
 // ---- MIDI out lanes --------------------------------------------------------------------------
+
+// ---- samples -------------------------------------------------------------------------------
+
+std::vector<std::string> PatchCanvas::sampleChoices() const
+{
+    auto names = ps::sampleNames();
+    for (auto& s : processor.patch().samples)
+        names.push_back (s.id);
+    return names;
+}
+
+juce::String PatchCanvas::sampleLabel (const ps::Node& n) const { return sampleLabelIn (processor.patch(), n); }
+
+bool PatchCanvas::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    if (loadSample == nullptr)
+        return false;
+    for (auto& f : files)
+        if (juce::File (f).hasFileExtension ("wav;wave;aif;aiff;flac;ogg;mp3"))
+            return true;
+    return false;
+}
+
+void PatchCanvas::fileDragEnter (const juce::StringArray&, int, int)
+{
+    dropHover = true;
+    repaint();
+}
+
+void PatchCanvas::fileDragExit (const juce::StringArray&)
+{
+    dropHover = false;
+    repaint();
+}
+
+void PatchCanvas::filesDropped (const juce::StringArray& files, int x, int y)
+{
+    dropHover = false;
+    juce::Array<juce::File> audio;
+    for (auto& f : files)
+        if (juce::File (f).hasFileExtension ("wav;wave;aif;aiff;flac;ogg;mp3"))
+            audio.add (juce::File (f));
+    const auto world = toWorld (juce::Point<float> ((float) x, (float) y));
+    const auto hit = hitTest (world);
+    const int node = hit.node >= 0 && hit.node < (int) graph().nodes.size() && graph().nodes[(size_t) hit.node].kind == "sample" ? hit.node : -1;
+    loadSampleFiles (audio, node, world);
+    repaint();
+}
+
+void PatchCanvas::loadSampleFiles (const juce::Array<juce::File>& files, int node, juce::Point<float> world)
+{
+    if (files.isEmpty() || loadSample == nullptr)
+        return;
+    auto& root = processor.patch();
+    int loaded = 0;
+    juce::StringArray failed;
+    std::string lastId;
+    for (auto& f : files)
+    {
+        ps::Sample s;
+        if (! loadSample (f, s))
+        {
+            failed.add (f.getFileName());
+            continue;
+        }
+        // A file already in the patch is reused rather than stored twice.
+        auto same = std::find_if (root.samples.begin(), root.samples.end(), [&] (const ps::Sample& x) { return x.path == s.path && ! x.data.empty(); });
+        if (same != root.samples.end())
+            lastId = same->id;
+        else
+        {
+            int next = 1;
+            for (auto& x : root.samples)
+                if (x.id.size() > 1 && x.id[0] == 's')
+                    next = std::max (next, std::atoi (x.id.c_str() + 1) + 1);
+            s.id = "s" + std::to_string (next);
+            lastId = s.id;
+            root.samples.push_back (std::move (s));
+        }
+        ++loaded;
+        if (node < 0)
+        {
+            // A new Sample player for each file, stepping down so they don't pile up.
+            addModule ("sample", world);
+            world += juce::Point<float> (0, 40);
+            graph().nodes.back().sample = lastId;
+        }
+    }
+    if (node >= 0 && ! lastId.empty() && node < (int) graph().nodes.size())
+        graph().nodes[(size_t) node].sample = lastId;
+    // Sounds no player uses any more leave the patch, so a file that was replaced doesn't
+    // stay embedded.
+    std::set<std::string> used;
+    std::function<void (const ps::Graph&)> collect = [&] (const ps::Graph& g) {
+        for (auto& n : g.nodes)
+        {
+            if (n.kind == "sample")
+                used.insert (n.sample);
+            for (auto& inner : n.inner)
+                collect (inner);
+        }
+    };
+    collect (root);
+    root.samples.erase (std::remove_if (root.samples.begin(), root.samples.end(), [&] (const ps::Sample& x) { return ! used.count (x.id); }), root.samples.end());
+    if (loaded)
+        edited();
+    if (! failed.isEmpty())
+        showMessage ("Couldn't read " + failed.joinIntoString (", ") + ". WAV, AIFF, FLAC, Ogg and MP3 files work.", 5000);
+}
+
+void PatchCanvas::chooseSampleFile (int node)
+{
+    sampleChooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+                                                        "*.wav;*.wave;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+    const auto id = node >= 0 && node < (int) graph().nodes.size() ? graph().nodes[(size_t) node].id : std::string();
+    sampleChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,
+                                [this, id] (const juce::FileChooser& fc) {
+                                    const auto files = fc.getResults();
+                                    if (files.isEmpty())
+                                        return;
+                                    const int index = graph().indexOf (id);
+                                    loadSampleFiles (files, index, toWorld (getLocalBounds().getCentre().toFloat()));
+                                });
+}
+
+void PatchCanvas::showSampleMenu (int index)
+{
+    auto& patch = graph();
+    if (index < 0 || index >= (int) patch.nodes.size() || patch.nodes[(size_t) index].kind != "sample")
+        return;
+    const auto id = patch.nodes[(size_t) index].id;
+    const auto current = patch.nodes[(size_t) index].sample;
+    auto pick = [this, id] (const std::string& sample) {
+        return [this, id, sample] {
+            if (auto* m = graph().find (id))
+            {
+                m->sample = sample;
+                edited();
+            }
+        };
+    };
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Built-in");
+    for (auto& name : ps::sampleNames())
+        menu.addItem (u8 (name), true, name == current, pick (name));
+    const auto& samples = processor.patch().samples;
+    if (! samples.empty())
+    {
+        menu.addSectionHeader ("In this patch");
+        for (auto& s : samples)
+            menu.addItem (u8 (s.name) + (s.missing ? " (missing)" : ""), true, s.id == current, pick (s.id));
+    }
+    menu.addSeparator();
+    menu.addItem ("Load a file...", loadSample != nullptr, false, [this, id] { chooseSampleFile (graph().indexOf (id)); });
+    for (auto& s : samples)
+        if (s.id == current)
+        {
+            menu.addItem ("Show " + juce::File (s.path).getFileName() + " in " + juce::File (s.path).getParentDirectory().getFileName(), juce::File (s.path).existsAsFile(), false,
+                          [path = s.path] { juce::File (path).revealToUser(); });
+            const bool embedded = (double) s.data.size() <= ps::kEmbedSeconds * s.rate;
+            menu.addItem (embedded ? "Saved inside the patch" : "Longer than " + juce::String ((int) ps::kEmbedSeconds) + " s: saved as a path, reloaded on open", false, false, nullptr);
+        }
+    menu.addItem ("Drop audio files on the module, or on empty space", false, false, nullptr);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (juce::Desktop::getMousePosition(), juce::Desktop::getMousePosition()).expanded (1)));
+}
 
 void PatchCanvas::showLaneMenu (int index, int lane)
 {

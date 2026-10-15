@@ -89,6 +89,8 @@ namespace
         int lo = 0, hi = 0;
         Combine mode = Combine::orMode;
         int sample = 0, pitch = 0, decay = 6, bus = 1;
+        int level = 100, pan = 0, start = 0, cutoff = 100, choke = 0; // Sample player
+        bool mono = false;
         std::vector<int> buses; // Audio outs a Sample player feeds
         int channel = 10;
         std::vector<int> notes;
@@ -138,7 +140,7 @@ namespace
         return h;
     }
 
-    void compile (const Graph& g, CGraph& c)
+    void compile (const Graph& g, CGraph& c, const Graph& root)
     {
         const size_t n = g.nodes.size();
         c.nodes.resize (n);
@@ -321,9 +323,22 @@ namespace
                 {
                     const auto& names = sampleNames();
                     auto it = std::find (names.begin(), names.end(), m.sample);
-                    x.sample = it == names.end() ? 0 : (int) (it - names.begin());
+                    x.sample = it == names.end() ? -1 : (int) (it - names.begin());
+                    if (x.sample < 0) // one of the patch's own sounds, after the built-in ones
+                    {
+                        x.sample = 0;
+                        for (size_t j = 0; j < root.samples.size(); ++j)
+                            if (root.samples[j].id == m.sample)
+                                x.sample = (int) names.size() + (int) j;
+                    }
                     x.pitch = m.get ("pitch");
                     x.decay = m.get ("decay", 6);
+                    x.level = std::max (0, std::min (100, m.get ("lvl", 100)));
+                    x.pan = std::max (-50, std::min (50, m.get ("pan")));
+                    x.start = std::max (0, std::min (100, m.get ("start")));
+                    x.cutoff = std::max (0, std::min (100, m.get ("cut", 100)));
+                    x.choke = std::max (0, std::min (4, m.get ("choke")));
+                    x.mono = m.get ("mono") != 0;
                     break;
                 }
                 case K::audio: x.bus = std::max (1, std::min (8, m.get ("bus", 1))); break;
@@ -342,7 +357,7 @@ namespace
                     x.inner = std::make_unique<CGraph>();
                     if (! m.inner.empty())
                     {
-                        compile (m.inner.front(), *x.inner);
+                        compile (m.inner.front(), *x.inner, root);
                         for (size_t j = 0; j < m.inner.front().nodes.size(); ++j)
                             if (m.inner.front().nodes[j].kind == "subout")
                             {
@@ -494,6 +509,10 @@ struct Engine::Impl
             case K::sample:
                 if (k == "pitch") t.pitch = clampTo (-12, 12);
                 else if (k == "decay") t.decay = clampTo (1, 10);
+                else if (k == "lvl") t.level = clampTo (0, 100);
+                else if (k == "pan") t.pan = clampTo (-50, 50);
+                else if (k == "start") t.start = clampTo (0, 100);
+                else if (k == "cut") t.cutoff = clampTo (0, 100);
                 break;
             default: break;
         }
@@ -856,7 +875,8 @@ struct Engine::Impl
                 if (x.trig && out)
                     for (int bus : x.buses)
                         if (out->hits.size() < out->hits.capacity())
-                            out->hits.push_back ({ x.sample, bus, isAccent (x.trig), x.pitch, x.decay, velocityOf (x.trig), ratchetsOf (x.trig), 0.0 });
+                            out->hits.push_back ({ x.sample, bus, isAccent (x.trig), x.pitch, x.decay, velocityOf (x.trig), ratchetsOf (x.trig), 0.0,
+                                                   x.level, x.pan, x.start, x.cutoff, x.choke, x.mono, (int) (x.hash & 0x7fffffff) });
                 break;
 
             case K::midi:
@@ -940,7 +960,7 @@ Engine::~Engine() = default;
 void Engine::load (const Graph& patch)
 {
     impl->root = CGraph {};
-    compile (patch, impl->root);
+    compile (patch, impl->root, patch);
     {
         auto it = patch.settings.find ("follow");
         impl->follow = followFromSetting (it == patch.settings.end() ? 0 : it->second);

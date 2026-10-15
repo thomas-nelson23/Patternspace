@@ -6,6 +6,7 @@
 #include "Presets.h"
 
 #include <cmath>
+#include <functional>
 
 juce::AudioProcessor::BusesProperties PatternspaceProcessor::makeBuses()
 {
@@ -30,6 +31,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout makeParameters()
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "run", 1 }, "Play", true));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sync", 1 }, "Host sync", true));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "thru", 1 }, "MIDI thru", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "master", 1 }, "Master",
+                                                             juce::NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f,
+                                                             juce::AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "clip", 1 }, "Soft clip", true));
     for (int i = 1; i <= ps::Engine::numMacros; ++i)
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "m" + juce::String (i), 1 }, "Macro " + juce::String (i),
                                                                  juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f));
@@ -45,6 +50,11 @@ PatternspaceProcessor::PatternspaceProcessor()
     runParam = params.getRawParameterValue ("run");
     syncParam = params.getRawParameterValue ("sync");
     thruParam = params.getRawParameterValue ("thru");
+    masterParam = params.getRawParameterValue ("master");
+    clipParam = params.getRawParameterValue ("clip");
+    formats.registerBasicFormats();
+    for (auto& g : busGainL) g = 1.0f;
+    for (auto& g : busGainR) g = 1.0f;
     for (int i = 0; i < ps::Engine::numMacros; ++i)
     {
         macroParams[(size_t) i] = params.getRawParameterValue ("m" + juce::String (i + 1));
@@ -72,7 +82,9 @@ PatternspaceProcessor::~PatternspaceProcessor()
 
 void PatternspaceProcessor::prepareToPlay (double sampleRate, int)
 {
+    const juce::SpinLock::ScopedLockType lock (samplerLock);
     sampler.prepare (sampleRate);
+    sampler.setUserSamples (std::vector<ps::Sampler::Sound> (userBank));
     numPending = 0;
     wasPlaying = false;
     internalPpq = 0;
@@ -202,13 +214,90 @@ void PatternspaceProcessor::readSettings()
     };
     clockRate = juce::jlimit (0, 2, setting ("rate", 0));
     swingAmount = juce::jlimit (50, 75, setting ("swing", 50));
+
+    // Each audio out's level and pan, wherever it sits; the first module on a bus decides.
+    std::array<bool, ps::Sampler::numBuses> seen {};
+    std::function<void (const ps::Graph&)> walk = [&] (const ps::Graph& g) {
+        for (auto& n : g.nodes)
+        {
+            if (n.kind == "audio")
+            {
+                const int b = juce::jlimit (1, ps::Sampler::numBuses, n.get ("bus", 1)) - 1;
+                if (seen[(size_t) b])
+                    continue;
+                seen[(size_t) b] = true;
+                const float level = juce::jlimit (0, 200, n.get ("lvl", 100)) / 100.0f;
+                const float pan = juce::jlimit (-50, 50, n.get ("pan")) / 100.0f + 0.5f;
+                busGainL[(size_t) b] = level * std::cos (pan * juce::MathConstants<float>::halfPi);
+                busGainR[(size_t) b] = level * std::sin (pan * juce::MathConstants<float>::halfPi);
+            }
+            for (auto& inner : n.inner)
+                walk (inner);
+        }
+    };
+    walk (graph);
+    for (size_t b = 0; b < seen.size(); ++b)
+        if (! seen[b])
+            busGainL[b] = busGainR[b] = 1.0f;
 }
+
+void PatternspaceProcessor::updateSamples()
+{
+    std::string signature;
+    for (auto& s : graph.samples)
+        signature += s.id + ":" + std::to_string (s.data.size()) + ":" + std::to_string ((int) s.rate) + ";";
+    if (signature == samplesSignature)
+        return;
+    samplesSignature = signature;
+    auto bank = ps::Sampler::bankFor (graph.samples);
+    const juce::SpinLock::ScopedLockType lock (samplerLock);
+    userBank = bank;
+    sampler.setUserSamples (std::move (bank));
+}
+
+bool PatternspaceProcessor::loadSampleFile (const juce::File& f, ps::Sample& sample)
+{
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (f));
+    if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples <= 0)
+        return false;
+    const auto frames = (int) std::min<juce::int64> (reader->lengthInSamples, (juce::int64) (reader->sampleRate * 60.0));
+    juce::AudioBuffer<float> buffer ((int) reader->numChannels, frames);
+    if (! reader->read (&buffer, 0, frames, 0, true, true))
+        return false;
+    sample.name = f.getFileNameWithoutExtension().toStdString();
+    sample.path = f.getFullPathName().toStdString();
+    sample.rate = reader->sampleRate;
+    sample.missing = false;
+    sample.data.assign ((size_t) frames, 0.0f);
+    const float scale = 1.0f / (float) buffer.getNumChannels();
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        const float* in = buffer.getReadPointer (ch);
+        for (int i = 0; i < frames; ++i)
+            sample.data[(size_t) i] += in[i] * scale;
+    }
+    return true;
+}
+
+void PatternspaceProcessor::resolveSamples()
+{
+    for (auto& s : graph.samples)
+    {
+        if (! s.data.empty())
+            continue;
+        const juce::File f (s.path);
+        s.missing = s.path.empty() || ! f.existsAsFile() || ! loadSampleFile (f, s);
+    }
+}
+
+bool PatternspaceProcessor::clippedRecently() { return clipCount.exchange (0) > 0; }
 
 void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
     buffer.clear();
+    const juce::SpinLock::ScopedLockType samplerHeld (samplerLock); // a sample load waits for the block
 
     // What came in: notes for MIDI in modules and the reset note, controllers for the macros.
     struct Arrived
@@ -409,13 +498,49 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             right[(size_t) b] = bus.getWritePointer (1);
         }
     }
-    sampler.render (left, right, n);
+    std::array<float, ps::Sampler::numBuses> gainL {}, gainR {};
+    for (size_t b = 0; b < gainL.size(); ++b)
+    {
+        gainL[b] = busGainL[b].load();
+        gainR[b] = busGainR[b].load();
+    }
+    sampler.render (left, right, n, gainL, gainR);
     for (int b = 0; b < ps::Sampler::numBuses; ++b)
     {
         const float peak = sampler.takePeak (b);
         if (peak > levels[(size_t) b].load())
             levels[(size_t) b] = peak;
     }
+
+    // The master trim and the soft clipper, on every output that is on. The clipper bends what
+    // goes past 0 dB back under it (tanh), so 64 voices into one out can't hard-clip.
+    const float master = juce::Decibels::decibelsToGain (masterParam ? masterParam->load() : 0.0f);
+    const bool clip = clipParam == nullptr || clipParam->load() > 0.5f;
+    float peak = 0;
+    bool over = false;
+    for (int b = 0; b < (standalone ? 1 : getBusCount (false)); ++b)
+    {
+        auto bus = getBusBuffer (buffer, false, b);
+        for (int ch = 0; ch < bus.getNumChannels(); ++ch)
+        {
+            float* d = bus.getWritePointer (ch);
+            for (int i = 0; i < n; ++i)
+            {
+                float s = d[i] * master;
+                if (std::abs (s) > 1.0f)
+                    over = true;
+                if (clip)
+                    s = std::tanh (s);
+                d[i] = s;
+                if (b == 0)
+                    peak = std::max (peak, std::abs (s));
+            }
+        }
+    }
+    if (peak > masterPeak.load())
+        masterPeak = peak;
+    if (over)
+        ++clipCount;
 }
 
 void PatternspaceProcessor::pushUndo (const juce::String& undoGroup)
@@ -479,6 +604,7 @@ void PatternspaceProcessor::commitPatch (const juce::String& undoGroup)
         }
     }
     readSettings();
+    updateSamples();
     auto next = std::make_unique<ps::Engine>();
     next->load (graph);
     next->setViewPath (viewPath);
@@ -555,6 +681,7 @@ void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::St
     name = newName;
     file = juce::File();
     viewPath.clear(); // the editor goes back to the root of a new patch
+    resolveSamples();
     if (! undoable)
     {
         undoStack.clear();
@@ -608,6 +735,7 @@ float PatternspaceProcessor::busLevel (int bus) const
 
 void PatternspaceProcessor::decayLevels()
 {
+    masterPeak = masterPeak.load() * 0.7f;
     for (auto& l : levels)
         l = l.load() * 0.7f;
 }

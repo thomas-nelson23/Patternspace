@@ -27,6 +27,8 @@ public:
 private:
     class Library;
     class TabStrip;
+    class OutputButton; // the output strip's button: a small meter, red when the output clipped
+    class OutputPanel;  // the strip itself: master trim, soft clip, a meter per out
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
@@ -50,6 +52,7 @@ private:
     std::function<void()> pendingAfterSave;
     void showUpdatesMenu();
     void showMidiMenu(); // the standalone app's MIDI output device
+    void showOutputPanel();
     void refreshUpdateButton();
     void refreshTransport(); // dims the internal clock's controls while the host drives it
     void saveViewState();
@@ -81,6 +84,7 @@ private:
     juce::TextButton updatesButton { "Updates" };
     juce::TextButton midiButton { "MIDI" }; // standalone only: the output device, lit while notes go out
     int midiSeen = 0;
+    std::unique_ptr<OutputButton> outButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatternspaceEditor)
 };

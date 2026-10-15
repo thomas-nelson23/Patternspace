@@ -32,7 +32,7 @@ namespace
             { "ratchet", "Ratchet", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
             { "fill", "Fill", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
             { "scene", "Scene", 0x9cc7cf, {}, { "out" }, {}, {}, 150, false },
-            { "sample", "Sample player", 0xff2a4f, { "trig" }, { "audio" }, {}, { P::audio }, 160, false },
+            { "sample", "Sample player", 0xff2a4f, { "trig" }, { "audio" }, {}, { P::audio }, 170, false },
             { "audio", "Audio out", 0xff2a4f, { "audio" }, {}, { P::audio }, {}, 150, false },
             { "midi", "MIDI out", 0xff2a4f, {}, {}, {}, {}, 170, false },
             { "cc", "CC out", 0xff2a4f, { "ctl" }, {}, { P::control }, {}, 150, false },
@@ -220,8 +220,19 @@ void applyDefaults (Node& n)
     else if (k == "ratchet") { def ("n", 2); def ("chance", 10); }
     else if (k == "fill") { def ("bars", 4); def ("dens", 5); }
     else if (k == "scene") { def ("ways", 4); def ("scene", 1); }
-    else if (k == "sample") { if (n.sample.empty()) n.sample = "909 Kick"; def ("pitch", 0); def ("decay", 6); }
-    else if (k == "audio") def ("bus", 1);
+    else if (k == "sample")
+    {
+        if (n.sample.empty()) n.sample = "909 Kick";
+        def ("pitch", 0);
+        def ("decay", 6);
+        def ("lvl", 100);
+        def ("pan", 0);
+        def ("start", 0);
+        def ("cut", 100);
+        def ("choke", 0);
+        def ("mono", 0);
+    }
+    else if (k == "audio") { def ("bus", 1); def ("lvl", 100); def ("pan", 0); }
     else if (k == "midi")
     {
         def ("ch", 10);
@@ -246,7 +257,8 @@ bool isControlSource (const Node& n) { return n.kind == "macro" || n.kind == "lf
 std::vector<ParamSpec> modulatableParams (const Node& n)
 {
     static const std::set<std::string> keys { "hits", "rot", "density", "dk", "ds", "dh", "chaos", "div", "every", "chance",
-                                              "vel", "n", "steps", "dens", "scene", "pitch", "decay", "lvl", "soft" };
+                                              "vel", "n", "steps", "dens", "scene", "pitch", "decay", "lvl", "soft",
+                                              "pan", "start", "cut" };
     std::vector<ParamSpec> out;
     if (n.kind == "grids")
     {
@@ -314,7 +326,11 @@ std::vector<ParamSpec> paramsOf (const Node& n)
     if (k == "scene")
         return { { "ways", "Inputs", 2, 8 }, { "scene", "Scene", 1, std::max (1, n.get ("ways", 4)) } };
     if (k == "sample")
-        return { { "pitch", "Pitch", -12, 12 }, { "decay", "Decay", 1, 10, 10, "%" } };
+        return { { "pitch", "Pitch", -12, 12 },       { "decay", "Decay", 1, 10, 10, "%" }, { "lvl", "Level", 0, 100, 1, "%" },
+                 { "pan", "Pan", -50, 50 },          { "start", "Start", 0, 100, 1, "%" },  { "cut", "Filter", 0, 100, 1, "%" },
+                 { "choke", "Choke", 0, 4 } };
+    if (k == "audio")
+        return { { "lvl", "Level", 0, 200, 1, "%" }, { "pan", "Pan", -50, 50 } };
     if (k == "midi")
         return { { "nout", "Outputs", 1, 16 }, { "ch", "Channel", 1, 16 }, { "len", "Length", 1, 32 }, { "ofs", "Nudge", -50, 50, 1, "%" } };
     if (k == "midiin")
