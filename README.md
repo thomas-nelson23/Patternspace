@@ -108,6 +108,11 @@ version don't match, since the app compares its own version with the tag.
   the header, to collapse it.
 - Right-click a module to collapse it, delete it or move it to another tab. Wires to modules that
   stay behind become tags, so the patch keeps playing.
+- Click **Open** on a subsystem (or double-click it) to see and edit the patch inside. The path
+  at the top left, Esc, or a tab goes back out. Edits change that copy of the subsystem only.
+- **New subsystem** in the library adds an empty one and opens it. Add its inputs and outputs with
+  the + buttons on the Inputs and Outputs modules, right-click a port there to rename it, make it
+  audio or remove it, then add modules and wire them up. Right-click a subsystem to rename it.
 - **Open...** and **Save...** read and write patch files. Subsystems can be saved from their
   right-click menu and added to any patch with **Add from file...** in the library.
 
@@ -128,8 +133,7 @@ version don't match, since the app compares its own version with the tag.
 ## Not in the plug-in yet
 
 The prototype can still do a few things the plug-in can't: drawing new blocks and text labels
-(existing ones show and move), making a subsystem from a selection, opening a subsystem to edit
-what's inside, choosing tag colours, and undo.
+(existing ones show and move), making a subsystem from a selection, choosing tag colours, and undo.
 
 ## Licences
 

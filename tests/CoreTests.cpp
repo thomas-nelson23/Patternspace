@@ -273,6 +273,94 @@ void testTagsAndFeedback()
     checkEq (juce::String (engine.valuesAt ("e")), juce::String ("1"), "the tag reaches the other tab");
     checkEq (juce::String (engine.valuesAt ("a")), juce::String ("0"), "a feedback loop reads silence");
 }
+// A subsystem made from scratch: ports added, wired, removed and renamed from either side.
+void testNewSubsystem()
+{
+    ps::Graph g;
+    g.nodes.push_back (ps::makeNode ("clock", "clk", 0, 0));
+    g.nodes.push_back (ps::makeSubsystem ("sub", "Mine", 200, 0));
+    auto* sub = g.find ("sub");
+    checkEq ((int) sub->inner.front().nodes.size(), 2, "a new subsystem holds just its Inputs and Outputs");
+    checkEq ((int) ps::inputsOf (*sub).size() + (int) ps::outputsOf (*sub).size(), 0, "and has no ports yet");
+
+    ps::addSubsystemPort (*sub, false, "spare", ps::PortType::gate);
+    ps::addSubsystemPort (*sub, false, "clk", ps::PortType::gate);
+    ps::addSubsystemPort (*sub, true, "hits", ps::PortType::gate);
+    auto& inner = sub->inner.front();
+    const auto* in = ps::subsystemInputs (*sub);
+    const auto* out = ps::subsystemOutputs (*sub);
+    checkEq ((int) ps::outputsOf (*in).size(), 2, "the Inputs module has an output per subsystem input");
+    checkEq ((int) ps::inputsOf (*out).size(), 1, "the Outputs module has an input per subsystem output");
+
+    const auto inId = in->id, outId = out->id;
+    auto e = ps::makeNode ("euclid", "e", 200, 0);
+    e.set ("hits", 16);
+    inner.nodes.push_back (e);
+    inner.links.push_back ({ inId, 1, "e", 0 });
+    inner.links.push_back ({ "e", 0, outId, 0 });
+    g.links.push_back ({ "clk", 0, "sub", 1 });
+
+    auto play = [&] {
+        ps::Engine engine;
+        engine.load (g);
+        ps::StepOutput o;
+        engine.step (0, o);
+        return juce::String (engine.valuesAt ("sub"));
+    };
+    checkEq (play(), juce::String ("1"), "the clock plays through the new subsystem");
+
+    ps::removeSubsystemPort (g, *sub, false, 0);
+    checkEq (juce::String (ps::inputsOf (*sub).front()), juce::String ("clk"), "removing an input shifts the rest down");
+    checkEq (g.links.back().q, 0, "the outside wire follows");
+    checkEq (play(), juce::String ("1"), "and the subsystem still plays");
+
+    ps::renameSubsystemPort (*sub, true, 0, "gate");
+    checkEq (juce::String (ps::inputsOf (*ps::subsystemOutputs (*sub)).front()), juce::String ("gate"), "renaming shows inside too");
+
+    ps::normalise (g); // what loading adds: a first tab
+    ps::Graph copy;
+    check (ps::json::fromString (ps::json::toString (g), copy), "a patch with a new subsystem saves and loads");
+    checkEq (juce::String (ps::json::toString (copy)), juce::String (ps::json::toString (g)), "unchanged");
+
+    ps::setSubsystemPortType (g, *sub, true, 0, ps::PortType::audio);
+    checkEq ((int) sub->inner.front().links.size(), 1, "a gate wire into a port that became audio is dropped");
+}
+
+// The editor draws an open subsystem from the engine's view of the graph inside it.
+void testSubsystemView()
+{
+    auto presets = factoryPresets();
+    auto it = std::find_if (presets.begin(), presets.end(), [] (auto& p) { return p.patch.find ("sn") != nullptr; });
+    check (it != presets.end(), "a factory preset has the subsystem sn");
+    if (it == presets.end())
+        return;
+    const auto& patch = it->patch;
+    const auto& inner = patch.find ("sn")->inner.front();
+
+    ps::Engine engine;
+    engine.load (patch);
+    engine.setViewPath ({ "sn" });
+    checkEq ((int) engine.view().size(), (int) inner.nodes.size(), "the view lists the modules inside sn");
+    const int pr = inner.indexOf ("pr");
+    ps::StepOutput out;
+    int mismatches = 0, hits = 0;
+    for (int s = 0; s < 64; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        const int v = engine.view()[(size_t) pr].out[0];
+        hits += v > 0 ? 1 : 0;
+        mismatches += juce::String (v) != juce::String (engine.valuesAt ("sn/pr")) ? 1 : 0;
+    }
+    checkEq (mismatches, 0, "the view inside sn follows its modules");
+    check (hits > 0, "the snare inside sn plays");
+
+    engine.setViewPath ({ "sn", "missing" });
+    checkEq ((int) engine.view().size(), (int) patch.nodes.size(), "a broken path shows the root patch");
+    engine.setViewPath ({});
+    checkEq ((int) engine.view().size(), (int) patch.nodes.size(), "an empty path shows the root patch");
+}
+
 void testUpdateCheck()
 {
     using ps::update::compareVersions;
@@ -331,6 +419,8 @@ int main()
     testJsonRoundTrip();
     testEditing();
     testTagsAndFeedback();
+    testSubsystemView();
+    testNewSubsystem();
     testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";

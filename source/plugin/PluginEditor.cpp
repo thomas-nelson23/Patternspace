@@ -64,6 +64,7 @@ public:
                     rows.push_back ({ info->title, ps::theme::rgb (info->colour), kind, -1, false });
         }
         rows.push_back ({ "SUBSYSTEMS", {}, {}, -1, true });
+        rows.push_back ({ "New subsystem", juce::Colours::transparentBlack, {}, -3, false });
         const auto& subs = ps::presets::subsystems();
         for (int i = 0; i < (int) subs.size(); ++i)
             rows.push_back ({ subs[(size_t) i].name, ps::theme::rgb (0x9fb6ff), {}, i, false });
@@ -91,7 +92,7 @@ private:
         juce::String text;
         juce::Colour colour;
         std::string kind;
-        int subsystem = -1; // index into the factory subsystems, or -2 to read one from a file
+        int subsystem = -1; // index into the factory subsystems, -2 to read one from a file, -3 for a new one
         bool header = false;
     };
 
@@ -147,6 +148,12 @@ private:
                 g.setColour (r.colour);
                 g.fillRoundedRectangle (box.getX() + 8, box.getCentreY() - 4, 8, 8, 2);
                 g.setColour (r.subsystem == -2 ? muted : textSoft);
+                if (r.subsystem == -3)
+                {
+                    g.setColour (textSoft);
+                    g.setFont (sans (11.5f));
+                    g.drawText ("+", box.withWidth (32), juce::Justification::centred);
+                }
                 g.setFont (sans (11.5f));
                 g.drawText (r.text, box.withTrimmedLeft (24), juce::Justification::centredLeft, true);
                 top += rowH;
@@ -178,6 +185,8 @@ private:
             const auto& r = owner->rows[(size_t) i];
             if (! r.kind.empty())
                 owner->canvas.addModule (r.kind);
+            else if (r.subsystem == -3)
+                owner->canvas.newSubsystem();
             else if (r.subsystem >= 0)
                 owner->canvas.addSubsystem (ps::presets::subsystems()[(size_t) r.subsystem]);
             else if (owner->onImport)
@@ -215,7 +224,8 @@ public:
             {
                 g.setColour (ps::theme::canvas);
                 g.fillRoundedRectangle (r.withTrimmedBottom (-4), 5);
-                g.setColour (selected);
+                // While a subsystem is open the tab stays marked, dimmed: clicking it goes back.
+                g.setColour (canvas.insideSubsystem() ? muted : selected);
                 g.fillRect (r.getX() + 6, r.getBottom() - 2, r.getWidth() - 12, 2.0f);
             }
             g.setColour (active ? text : label);
@@ -393,6 +403,7 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
 
     canvas.onViewChanged = [this] { refreshZoom(); };
     canvas.onPagesChanged = [this] { tabs->repaint(); };
+    canvas.onLevelChanged = [this] { tabs->repaint(); };
     canvas.onEdited = [this] { tabs->repaint(); };
     canvas.onExportSubsystem = [this] (const ps::Node& n) { exportSubsystem (n); };
 

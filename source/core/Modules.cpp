@@ -353,6 +353,152 @@ void prunePorts (Graph& g, const Node& n)
     }
 }
 
+Node makeSubsystem (const std::string& id, const std::string& name, double x, double y)
+{
+    Node n = makeNode ("sub", id, x, y);
+    n.name = name;
+    n.hasIns = n.hasOuts = true;
+    n.inner.assign (1, Graph {});
+    subsystemInputs (n);
+    subsystemOutputs (n);
+    return n;
+}
+
+namespace
+{
+    Node* innerModule (Node& sub, const char* kind, const char* id, double x)
+    {
+        if (sub.inner.empty())
+            sub.inner.emplace_back();
+        auto& g = sub.inner.front();
+        for (auto& m : g.nodes)
+            if (m.kind == kind)
+                return &m;
+        Node m = makeNode (kind, g.find (id) ? g.freshId (id) : id, x, 60);
+        // The module mirrors the subsystem's ports as they are now.
+        if (m.kind == "subin")
+        {
+            m.hasOuts = true;
+            m.outs = inputsOf (sub);
+            for (int q = 0; q < (int) m.outs.size(); ++q)
+                m.outT.push_back (inputType (sub, q));
+        }
+        else
+        {
+            m.hasIns = true;
+            m.ins = outputsOf (sub);
+            for (int p = 0; p < (int) m.ins.size(); ++p)
+                m.inT.push_back (outputType (sub, p));
+        }
+        g.nodes.push_back (m);
+        return &g.nodes.back();
+    }
+
+    // The two port lists that describe one side of a subsystem: its own, and the matching list on
+    // the Inputs or Outputs module inside.
+    struct Side
+    {
+        std::vector<std::string>*names[2];
+        std::vector<PortType>* types[2];
+    };
+
+    Side sideOf (Node& sub, Node& io, bool output)
+    {
+        if (output)
+        {
+            sub.hasOuts = io.hasIns = true;
+            return { { &sub.outs, &io.ins }, { &sub.outT, &io.inT } };
+        }
+        sub.hasIns = io.hasOuts = true;
+        return { { &sub.ins, &io.outs }, { &sub.inT, &io.outT } };
+    }
+
+    // Moves or drops what refers to `port` on one side of a node: wires and tags. With `remove`,
+    // the port goes and the ones after it shift down; otherwise only its wires go.
+    void detach (Graph& g, const std::string& id, bool output, int port, bool remove)
+    {
+        for (auto it = g.links.begin(); it != g.links.end();)
+        {
+            const bool mine = output ? it->a == id : it->b == id;
+            int& at = output ? it->p : it->q;
+            if (mine && at == port)
+            {
+                it = g.links.erase (it);
+                continue;
+            }
+            if (mine && remove && at > port)
+                --at;
+            ++it;
+        }
+        if (! remove)
+            return;
+        if (auto* n = g.find (id))
+        {
+            auto& tags = output ? n->tagOut : n->tagIn;
+            std::map<int, std::string> moved;
+            for (auto& [k, t] : tags)
+                if (k != port)
+                    moved[k > port ? k - 1 : k] = t;
+            tags = std::move (moved);
+        }
+    }
+} // namespace
+
+Node* subsystemInputs (Node& sub) { return innerModule (sub, "subin", "in", 40); }
+Node* subsystemOutputs (Node& sub) { return innerModule (sub, "subout", "out", 560); }
+
+void addSubsystemPort (Node& sub, bool output, const std::string& name, PortType type)
+{
+    auto* io = output ? subsystemOutputs (sub) : subsystemInputs (sub);
+    auto side = sideOf (sub, *io, output);
+    for (int i = 0; i < 2; ++i)
+    {
+        side.types[i]->resize (side.names[i]->size(), PortType::gate);
+        side.names[i]->push_back (name);
+        side.types[i]->push_back (type);
+    }
+}
+
+void removeSubsystemPort (Graph& parent, Node& sub, bool output, int port)
+{
+    auto* io = output ? subsystemOutputs (sub) : subsystemInputs (sub);
+    auto side = sideOf (sub, *io, output);
+    const std::string subId = sub.id, ioId = io->id;
+    for (int i = 0; i < 2; ++i)
+    {
+        if (port < (int) side.names[i]->size())
+            side.names[i]->erase (side.names[i]->begin() + port);
+        if (port < (int) side.types[i]->size())
+            side.types[i]->erase (side.types[i]->begin() + port);
+    }
+    detach (sub.inner.front(), ioId, ! output, port, true); // inside, the Inputs module's outputs
+    detach (parent, subId, output, port, true);
+}
+
+void renameSubsystemPort (Node& sub, bool output, int port, const std::string& name)
+{
+    auto* io = output ? subsystemOutputs (sub) : subsystemInputs (sub);
+    auto side = sideOf (sub, *io, output);
+    for (int i = 0; i < 2; ++i)
+        if (port >= 0 && port < (int) side.names[i]->size())
+            (*side.names[i])[(size_t) port] = name;
+}
+
+void setSubsystemPortType (Graph& parent, Node& sub, bool output, int port, PortType type)
+{
+    auto* io = output ? subsystemOutputs (sub) : subsystemInputs (sub);
+    auto side = sideOf (sub, *io, output);
+    const std::string subId = sub.id, ioId = io->id;
+    for (int i = 0; i < 2; ++i)
+    {
+        side.types[i]->resize (side.names[i]->size(), PortType::gate);
+        if (port >= 0 && port < (int) side.types[i]->size())
+            (*side.types[i])[(size_t) port] = type;
+    }
+    detach (sub.inner.front(), ioId, ! output, port, false);
+    detach (parent, subId, output, port, false);
+}
+
 const std::vector<std::string>& combineModes()
 {
     static const std::vector<std::string> m { "OR", "AND", "XOR", kCombineAMinusB };
