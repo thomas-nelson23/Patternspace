@@ -69,6 +69,7 @@ namespace
         std::vector<int> notes;
         std::unique_ptr<CGraph> inner;
         int subout = -1; // index of the Outputs module inside a subsystem
+        std::uint32_t hash = 0; // of the id, for position-seeded probability
 
         // state
         int pos = -1, row = 0, loop = 0, cnt = 0, sel = -1, fired = 0, trig = 0;
@@ -92,6 +93,14 @@ namespace
     };
 
     int nonNegMod (std::int64_t a, int m) { return (int) (((a % m) + m) % m); }
+
+    std::uint32_t fnv (const std::string& text)
+    {
+        std::uint32_t h = 2166136261u;
+        for (unsigned char c : text)
+            h = (h ^ c) * 16777619u;
+        return h;
+    }
 
     void compile (const Graph& g, CGraph& c)
     {
@@ -159,6 +168,7 @@ namespace
             CNode& x = c.nodes[i];
             x.k = kindOf (m.kind);
             x.id = m.id;
+            x.hash = fnv (m.id);
             x.nIn = (int) inputsOf (m).size();
             int maxQ = x.nIn;
             for (auto& [q, s] : src[i])
@@ -295,10 +305,16 @@ struct Engine::Impl
     CGraph root;
     const CGraph* shown = &root; // the graph view() describes
     Rng random { 1234 };
+    std::uint32_t seed = 1234;
+    Engine::ProbabilityMode probability = Engine::ProbabilityMode::position;
+    Engine::Follow follow = Engine::Follow::phrase;
+    int stepsPerBar = 16;
+    std::int64_t barStart = 0;
     std::int64_t last = -1;
     std::vector<View> view;
     StepOutput scratch;
     std::int64_t g = 0; // the step being evaluated
+    std::uint32_t subDepth = 0; // nesting while evaluating, mixed into probability seeds
 
     void evalGraph (CGraph& c, const std::vector<int>* ext, StepOutput* out)
     {
@@ -336,9 +352,10 @@ struct Engine::Impl
             case K::clock:
                 if (x.out.size() >= 3)
                 {
+                    const int spb = std::max (1, stepsPerBar);
                     x.out[0] = 1;
-                    x.out[1] = nonNegMod (g, 16) == 0 ? 1 : 0;
-                    x.out[2] = nonNegMod (g, 32) == 0 ? 1 : 0;
+                    x.out[1] = nonNegMod (g - barStart, spb) == 0 ? 1 : 0;
+                    x.out[2] = nonNegMod (g - barStart, 2 * spb) == 0 ? 1 : 0;
                 }
                 break;
 
@@ -439,8 +456,21 @@ struct Engine::Impl
             }
 
             case K::prob:
-                x.out[0] = (inv (0) && random.next() < x.chance / 10.0) ? 1 : 0;
+            {
+                const int in = inv (0);
+                double roll = 0;
+                if (probability == Engine::ProbabilityMode::stream)
+                    roll = in ? random.next() : 1.0; // the prototype draws only for a hit
+                else if (in)
+                {
+                    // One draw per step and module: the same song position always decides the same way.
+                    const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                    Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ (std::uint32_t) (g >> 32));
+                    roll = r.next();
+                }
+                x.out[0] = (in && roll < x.chance / 10.0) ? 1 : 0;
                 break;
+            }
 
             case K::combine:
             {
@@ -504,7 +534,9 @@ struct Engine::Impl
                     break;
                 // The subsystem's inputs become its Inputs module's outputs.
                 std::vector<int>& ext2 = x.in;
+                ++subDepth;
                 evalGraph (*x.inner, &ext2, out);
+                --subDepth;
                 if (x.subout >= 0)
                 {
                     const CNode& so = x.inner->nodes[(size_t) x.subout];
@@ -566,6 +598,13 @@ void Engine::load (const Graph& patch)
 {
     impl->root = CGraph {};
     compile (patch, impl->root);
+    {
+        auto it = patch.settings.find ("follow");
+        impl->follow = followFromSetting (it == patch.settings.end() ? 0 : it->second);
+        it = patch.settings.find ("seed");
+        impl->seed = it == patch.settings.end() ? 1234u : (std::uint32_t) it->second;
+    }
+    cellularRows(); // built now, on the message thread, not during the first step
     impl->shown = &impl->root;
     impl->view.assign (impl->root.nodes.size(), View {});
     impl->last = -1;
@@ -576,6 +615,9 @@ void Engine::adoptState (const Engine& previous)
     adopt (impl->root, previous.impl->root);
     impl->last = previous.impl->last;
     impl->random = previous.impl->random;
+    impl->probability = previous.impl->probability;
+    impl->stepsPerBar = previous.impl->stepsPerBar;
+    impl->barStart = previous.impl->barStart;
 }
 
 void Engine::step (std::int64_t index, StepOutput& out)
@@ -586,8 +628,27 @@ void Engine::step (std::int64_t index, StepOutput& out)
 
 void Engine::locate (std::int64_t index)
 {
-    resetState();
-    const std::int64_t from = index - nonNegMod (index, 32);
+    std::int64_t from = index;
+    switch (impl->follow)
+    {
+        case Follow::phrase:
+            resetState();
+            from = index - nonNegMod (index - impl->barStart, 2 * std::max (1, impl->stepsPerBar));
+            break;
+        case Follow::song:
+            // From bar 1, so the result is a pure function of the song position. Far into a song
+            // the replay is capped (about half an hour of sixteenths at 120 BPM): the generators
+            // whose lengths don't divide that window drift by then, but the replay stays short
+            // enough for the audio thread.
+            resetState();
+            from = std::max<std::int64_t> (0, index - 16384);
+            break;
+        case Follow::free:
+            // Keep going from wherever the generators were; only the step count moves.
+            impl->last = index - 1;
+            impl->updateView();
+            return;
+    }
     for (std::int64_t s = from; s < index; ++s)
     {
         impl->scratch.clear();
@@ -598,6 +659,21 @@ void Engine::locate (std::int64_t index)
     impl->updateView();
 }
 
+Engine::Follow Engine::follow() const { return impl->follow; }
+
+Engine::Follow Engine::followFromSetting (int value)
+{
+    return value == 1 ? Follow::song : value == 2 ? Follow::free : Follow::phrase;
+}
+
+void Engine::setMeter (int stepsPerBar, std::int64_t barStartStep)
+{
+    impl->stepsPerBar = std::max (1, stepsPerBar);
+    impl->barStart = barStartStep;
+}
+
+void Engine::setProbabilityMode (ProbabilityMode mode) { impl->probability = mode; }
+
 void Engine::resetState()
 {
     resetGraph (impl->root);
@@ -606,7 +682,11 @@ void Engine::resetState()
 
 std::int64_t Engine::lastStep() const { return impl->last; }
 
-void Engine::setRandomSeed (std::uint32_t seed) { impl->random = Rng (seed); }
+void Engine::setRandomSeed (std::uint32_t seed)
+{
+    impl->random = Rng (seed);
+    impl->seed = seed;
+}
 
 const std::vector<Engine::View>& Engine::view() const { return impl->view; }
 

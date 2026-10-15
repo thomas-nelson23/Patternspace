@@ -145,7 +145,7 @@ std::string subtitleOf (const Node& n)
 {
     const auto& k = n.kind;
     auto pct = [] (int v) { return std::to_string (v * 10) + "%"; };
-    if (k == "clock") return "host";
+    if (k == "clock") return "16ths";
     if (k == "euclid") return "E(" + std::to_string (n.get ("hits")) + "," + std::to_string (n.get ("len")) + ")";
     if (k == "random") return pct (n.get ("density"));
     if (k == "ca") return "R30";
@@ -211,9 +211,9 @@ std::vector<ParamSpec> paramsOf (const Node& n)
 {
     const auto& k = n.kind;
     if (k == "euclid")
-        return { { "hits", "Hits", 0, n.get ("len") }, { "len", "Steps", 1, 32 }, { "rot", "Rotate", 0, std::max (0, n.get ("len") - 1) } };
+        return { { "hits", "Hits", 0, n.get ("len") }, { "len", "Steps", 1, 64 }, { "rot", "Rotate", 0, std::max (0, n.get ("len") - 1) } };
     if (k == "random")
-        return { { "density", "Density", 0, 10, 10, "%" }, { "len", "Loop", 1, 16 } };
+        return { { "density", "Density", 0, 10, 10, "%" }, { "len", "Loop", 1, 64 }, { "seed", "Seed", 1, 9999 } };
     if (k == "grids")
         return { { "dk", "Kick fill", 0, 10, 10, "%" }, { "ds", "Snare fill", 0, 10, 10, "%" }, { "dh", "Hat fill", 0, 10, 10, "%" }, { "chaos", "Chaos", 0, 10, 10, "%" } };
     if (k == "div")

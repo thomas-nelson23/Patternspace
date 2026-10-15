@@ -79,7 +79,8 @@ private:
         laneNote,
         xy,
         open,
-        addPort
+        addPort,
+        reroll
     };
     struct Zone
     {
@@ -146,6 +147,7 @@ private:
     Layout layoutOf (const ps::Node&) const;
     float bodyHeight (const ps::Node&) const;
     bool onPage (const ps::Node&) const;
+    int settingOf (const char* key) const; // a root patch setting, 0 when unset
     HitResult hitTest (juce::Point<float> world) const;
     juce::Rectangle<float> tagRect (const ps::Node&, const Layout&, bool output, int port, const std::string& tag) const;
     juce::Colour tagColour (const std::string& tag) const;

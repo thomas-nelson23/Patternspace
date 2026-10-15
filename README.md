@@ -20,8 +20,15 @@ The plug-in is an instrument with MIDI output:
 - **Sample player** modules play built-in drum sounds into **Audio out** modules. There are 8
   stereo outputs. Out 1 is always on; enable Outs 2 to 8 in your DAW to give each sound its own
   mixer channel. Any output left off is mixed into Out 1.
-- The clock follows the host's tempo and transport while **Host sync** is on. In the standalone
-  app, or with sync off, **Play** and the tempo control run the internal clock.
+- The clock follows the host's tempo, transport and time signature while **Host sync** is on, so
+  the Clock's bar and 2-bar outputs land on the host's downbeats in 3/4 or 7/8 too. In the
+  standalone app, or with sync off, **Play** and the tempo control run the internal clock.
+- When playback starts or jumps, the Clock module's **Phrase / Song / Free** setting decides how
+  the generators line up: with the last two-bar phrase (the default), with bar 1 of the song (so a
+  bounce always matches playback), or not at all (free-running patterns keep going). **Reset** in
+  the top bar re-phases every generator by hand.
+- Probability modules decide from the song position, the module and the patch's seed, so the same
+  bar always makes the same choices and renders match what you heard.
 
 ## Installing
 
@@ -121,6 +128,7 @@ version don't match, since the app compares its own version with the tag.
 - `source/core`: the patch engine in plain C++ with no JUCE dependency. It matches the browser
   prototype step for step on every factory patch.
 - `source/state`: patch files, in the prototype's JSON format, so patches move between the two.
+  Files carry a format version (`"v": 2`); older files are upgraded as they load.
 - `source/plugin`: the JUCE processor, the patch canvas and the window.
 - `presets`: factory patches and subsystems, embedded in the plug-in.
 - `tests`: engine tests, including a 128-step comparison against the prototype for every

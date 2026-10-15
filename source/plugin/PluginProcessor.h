@@ -63,6 +63,11 @@ public:
     bool isRunning() const { return running.load(); }
     bool isFollowingHost() const { return followingHost.load(); } // the host's transport drives the clock
     double currentTempo() const { return tempo.load(); }
+    int meterNumerator() const { return meterNum.load(); }
+    int meterDenominator() const { return meterDen.load(); }
+    // Puts every generator back to the start of the phrase on the next step, like a reset arriving
+    // on every rst input at once.
+    void requestReset() { resetRequested = true; }
 
     juce::AudioProcessorValueTreeState params;
 
@@ -96,8 +101,9 @@ private:
     std::array<PendingOff, 512> pendingOffs {};
     int numPending = 0;
     std::array<std::atomic<float>, ps::Sampler::numBuses> levels {};
-    std::atomic<bool> running { false }, followingHost { false };
+    std::atomic<bool> running { false }, followingHost { false }, resetRequested { false };
     std::atomic<double> tempo { 124.0 };
+    std::atomic<int> meterNum { 4 }, meterDen { 4 };
 
     std::atomic<float>* bpmParam = nullptr;
     std::atomic<float>* runParam = nullptr;

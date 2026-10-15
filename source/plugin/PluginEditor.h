@@ -10,7 +10,8 @@
 // The plug-in window: transport and presets along the top, the module library on the left, the
 // workspace tabs and the patch canvas filling the rest.
 class PatternspaceEditor : public juce::AudioProcessorEditor,
-                           private juce::ChangeListener
+                           private juce::ChangeListener,
+                           private juce::Timer
 {
 public:
     explicit PatternspaceEditor (PatternspaceProcessor&);
@@ -24,6 +25,7 @@ private:
     class TabStrip;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void timerCallback() override;
     void refreshPresets();
     void refreshZoom();
     void openPatch();
@@ -32,6 +34,7 @@ private:
     void exportSubsystem (const ps::Node&);
     void showUpdatesMenu();
     void refreshUpdateButton();
+    void refreshTransport(); // dims the internal clock's controls while the host drives it
 
     PatternspaceProcessor& processor;
     ps::theme::Look look;
@@ -42,8 +45,9 @@ private:
 
     juce::ComboBox presetBox;
     juce::TextButton openButton { "Open..." }, saveButton { "Save..." };
-    juce::TextButton playButton { "Play" };
+    juce::TextButton playButton { "Play" }, resetButton { "Reset" };
     juce::ToggleButton syncButton { "Host sync" };
+    juce::TooltipWindow tooltips { nullptr, 500 }; // without one, setTooltip text never shows
     juce::Slider tempoSlider;
     juce::TextButton zoomOut { juce::String::fromUTF8 ("\xE2\x88\x92") }, zoomIn { "+" }, fitButton { "Fit" };
     juce::Label zoomLabel;
