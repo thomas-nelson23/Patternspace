@@ -1,0 +1,223 @@
+{
+  "name": "Learn the Modules",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "e",
+        "k": "euclid",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "PULSE"
+        },
+        "p": {
+          "hits": 5,
+          "len": 8,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "d",
+        "k": "div",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "div": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "p",
+        "k": "prob",
+        "x": 434,
+        "y": 220,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "chance": 5
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "c",
+        "k": "combine",
+        "x": 644,
+        "y": 120,
+        "c": 0,
+        "tagIn": {
+          "0": "PULSE"
+        },
+        "tagOut": {},
+        "p": {
+          "mode": "A−B"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sw",
+        "k": "switch",
+        "x": 644,
+        "y": 300,
+        "c": 0,
+        "tagIn": {
+          "0": "BAR",
+          "1": "2BAR",
+          "2": "PULSE"
+        },
+        "tagOut": {},
+        "p": {
+          "ways": 2,
+          "mode": "split"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 900,
+        "y": 120,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Lesson",
+          "lanes": [
+            {
+              "name": "Pulse minus odd",
+              "note": 36
+            },
+            {
+              "name": "Pulse, bar A",
+              "note": 38
+            },
+            {
+              "name": "Pulse, bar B",
+              "note": 42
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "d",
+        "p": 0,
+        "b": "p",
+        "q": 0
+      },
+      {
+        "a": "p",
+        "p": 0,
+        "b": "c",
+        "q": 1
+      },
+      {
+        "a": "c",
+        "p": 0,
+        "b": "m",
+        "q": 0
+      },
+      {
+        "a": "sw",
+        "p": 0,
+        "b": "m",
+        "q": 1
+      },
+      {
+        "a": "sw",
+        "p": 1,
+        "b": "m",
+        "q": 2
+      }
+    ],
+    "blocks": [
+      {
+        "id": "b1",
+        "x": 200,
+        "y": 10,
+        "w": 420,
+        "h": 300,
+        "t": "Make a pattern",
+        "c": "#2ad4ff",
+        "pg": "p1"
+      },
+      {
+        "id": "b2",
+        "x": 620,
+        "y": 80,
+        "w": 260,
+        "h": 320,
+        "t": "Shape it",
+        "c": "#ff2a4f",
+        "pg": "p1"
+      }
+    ],
+    "notes": [
+      {
+        "id": "n1",
+        "x": 224,
+        "y": -60,
+        "text": "Clock: every sixteenth, with bar and 2-bar pulses, tagged CLK, BAR and 2BAR so nothing needs a wire to it.",
+        "pg": "p1",
+        "w": 540
+      },
+      {
+        "id": "n2",
+        "x": 224,
+        "y": 330,
+        "text": "Clock divider passes every third clock; Probability lets half of those through; Combine in A−B mode plays the Euclid except where that lands.",
+        "pg": "p1",
+        "w": 380
+      },
+      {
+        "id": "n3",
+        "x": 644,
+        "y": 420,
+        "text": "Switch 1→2 steps every bar, so the pulse alternates between two drums.",
+        "pg": "p1",
+        "w": 240
+      }
+    ],
+    "settings": {
+      "follow": 0,
+      "seed": 1234
+    }
+  }
+}

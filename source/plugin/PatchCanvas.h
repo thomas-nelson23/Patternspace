@@ -77,7 +77,8 @@ public:
     std::function<void()> onEdited;       // after any change to the patch
     std::function<void()> onPagesChanged; // a tab was added, or modules moved between tabs
     std::function<void()> onLevelChanged; // a subsystem was opened or closed
-    std::function<void (const ps::Node&)> onExportSubsystem;
+    std::function<void (const ps::Node&)> onExportSubsystem;       // to the user's library
+    std::function<void (const ps::Node&)> onExportSubsystemToFile; // to a chosen file
     // Dragging modules onto a workspace tab moves them there. The editor says which tab, if any, is
     // under a screen point, and lights the one a drag would drop onto (empty for none).
     std::function<std::string (juce::Point<int> screenPos)> pageAtScreen;

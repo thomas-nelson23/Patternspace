@@ -13,6 +13,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <set>
 
 namespace
 {
@@ -101,14 +102,15 @@ void testReferenceRun()
     const auto seed = (std::uint32_t) (int) ref["probabilitySeed"];
 
     auto presets = factoryPresets();
-    check (presets.size() == 5, "five factory presets");
+    check (presets.size() >= 5, "at least the five original factory presets");
+    int compared = 0;
     for (auto& preset : presets)
     {
         auto expected = ref["presets"][juce::Identifier (preset.name)];
         auto* modules = expected.getDynamicObject();
-        check (modules != nullptr, "reference has " + preset.name);
         if (! modules)
-            continue;
+            continue; // presets made after the prototype have no reference run
+        ++compared;
 
         ps::Engine engine;
         engine.load (preset.patch);
@@ -130,6 +132,45 @@ void testReferenceRun()
             }
         }
         checkEq (mismatches, 0, preset.name + " plays the same as the prototype");
+    }
+    checkEq (compared, 5, "the five prototype presets are compared");
+}
+
+// Every factory preset is well formed: unique names, every tag an input listens to has a source,
+// every wire lands on ports that exist, and it makes sound within four bars.
+void testFactoryPresetsAreSound()
+{
+    std::set<juce::String> names;
+    for (auto& preset : factoryPresets())
+    {
+        check (names.insert (preset.name).second, preset.name + " has a unique name");
+        const auto& g = preset.patch;
+        std::set<std::string> owned;
+        for (auto& n : g.nodes)
+            for (auto& [p, t] : n.tagOut)
+                check (owned.insert (t).second, preset.name + ": tag " + juce::String (t) + " has one source");
+        for (auto& n : g.nodes)
+            for (auto& [q, t] : n.tagIn)
+                check (owned.count (t) > 0, preset.name + ": " + juce::String (n.id) + " listens to " + juce::String (t) + ", which nothing owns");
+        for (auto& l : g.links)
+        {
+            const auto *a = g.find (l.a), *b = g.find (l.b);
+            check (a && b, preset.name + ": wire between " + juce::String (l.a) + " and " + juce::String (l.b) + " names real modules");
+            if (a && b)
+                check (l.p < (int) ps::outputsOf (*a).size() && l.q < (int) ps::inputsOf (*b).size(),
+                       preset.name + ": wire " + juce::String (l.a) + " -> " + juce::String (l.b) + " lands on real ports");
+        }
+        ps::Engine engine;
+        engine.load (g);
+        ps::StepOutput out;
+        int notes = 0;
+        for (int s = 0; s < 64; ++s)
+        {
+            out.clear();
+            engine.step (s, out);
+            notes += (int) out.notes.size() + (int) out.hits.size();
+        }
+        check (notes > 0, preset.name + " plays something in four bars");
     }
 }
 
@@ -503,6 +544,7 @@ int main()
     testPatterns();
     testNotes();
     testReferenceRun();
+    testFactoryPresetsAreSound();
     testMidiOutput();
     testLocate();
     testDeterministicProbability();

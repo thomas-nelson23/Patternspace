@@ -307,10 +307,65 @@ void PatternspaceProcessor::commitPatch (const juce::String& undoGroup)
     savedName = name;
 }
 
+int PatternspaceProcessor::getNumPrograms() { return std::max (1, (int) ps::presets::factory().size()); }
+
+int PatternspaceProcessor::getCurrentProgram()
+{
+    const auto& factory = ps::presets::factory();
+    const juce::ScopedLock sl (stateLock);
+    for (int i = 0; i < (int) factory.size(); ++i)
+        if (factory[(size_t) i].name == savedName)
+            return i;
+    return 0;
+}
+
+void PatternspaceProcessor::setCurrentProgram (int index)
+{
+    const auto& factory = ps::presets::factory();
+    if (index < 0 || index >= (int) factory.size())
+        return;
+    auto load = [safe = juce::WeakReference<PatternspaceProcessor> (this), index] {
+        if (auto* self = safe.get())
+            self->loadPatch (ps::presets::factory()[(size_t) index].patch, ps::presets::factory()[(size_t) index].name);
+    };
+    if (juce::MessageManager::existsAndIsCurrentThread())
+        load();
+    else
+        juce::MessageManager::callAsync (load);
+}
+
+const juce::String PatternspaceProcessor::getProgramName (int index)
+{
+    const auto& factory = ps::presets::factory();
+    return index >= 0 && index < (int) factory.size() ? factory[(size_t) index].name : juce::String();
+}
+
+void PatternspaceProcessor::setPatchName (const juce::String& newName)
+{
+    if (newName == name)
+        return;
+    name = newName;
+    commitPatch();
+    sendChangeMessage();
+}
+
+bool PatternspaceProcessor::isDirty() const
+{
+    const juce::ScopedLock sl (stateLock);
+    return savedPatch != cleanPatch;
+}
+
+void PatternspaceProcessor::markClean()
+{
+    const juce::ScopedLock sl (stateLock);
+    cleanPatch = savedPatch;
+}
+
 void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::String& newName, bool undoable)
 {
     graph = newPatch;
     name = newName;
+    file = juce::File();
     viewPath.clear(); // the editor goes back to the root of a new patch
     if (! undoable)
     {
@@ -323,6 +378,7 @@ void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::St
     }
     else
         commitPatch();
+    markClean();
     sendChangeMessage();
 }
 

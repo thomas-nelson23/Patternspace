@@ -2351,10 +2351,17 @@ void PatchCanvas::showNodeMenu (int index)
     if (subPath.empty())
         menu.addSubMenu ("Move to tab", pages, rootPages.size() > 1);
     if (n.kind == "sub" && onExportSubsystem)
-        menu.addItem ("Save subsystem...", [this, id = n.id] {
+    {
+        menu.addItem ("Save to my subsystems...", [this, id = n.id] {
             if (auto* m = graph().find (id))
                 onExportSubsystem (*m);
         });
+        menu.addItem ("Save subsystem to a file...", [this, id = n.id] {
+            if (auto* m = graph().find (id))
+                if (onExportSubsystemToFile)
+                    onExportSubsystemToFile (*m);
+        });
+    }
     if (n.kind != "subin" && n.kind != "subout")
     {
         menu.addSeparator();

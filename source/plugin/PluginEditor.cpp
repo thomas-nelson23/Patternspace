@@ -44,20 +44,7 @@ class PatternspaceEditor::Library : public juce::Component
 public:
     Library (PatchCanvas& c, std::function<void()> importFromFile) : canvas (c), onImport (std::move (importFromFile))
     {
-        for (auto& section : ps::librarySections())
-        {
-            rows.push_back ({ section.title, {}, {}, -1, true });
-            for (auto& kind : section.kinds)
-                if (auto* info = ps::kindInfo (kind))
-                    rows.push_back ({ info->title, ps::theme::rgb (info->colour), kind, -1, false });
-        }
-        rows.push_back ({ "Subsystems", {}, {}, -1, true });
-        rows.push_back ({ "New subsystem", juce::Colours::transparentBlack, {}, -3, false });
-        const auto& subs = ps::presets::subsystems();
-        for (int i = 0; i < (int) subs.size(); ++i)
-            rows.push_back ({ subs[(size_t) i].name, ps::theme::text, {}, i, false });
-        rows.push_back ({ "Add from file...", ps::theme::textDim, {}, -2, false });
-
+        rebuild();
         list.owner = this;
         list.setSize (libraryW, height());
         viewport.setViewedComponent (&list, false);
@@ -74,15 +61,40 @@ public:
 
     void paint (juce::Graphics& g) override { g.fillAll (ps::theme::bg); }
 
+    // Lists the modules, the factory subsystems and the user's saved subsystems again.
+    void rebuild()
+    {
+        rows.clear();
+        for (auto& section : ps::librarySections())
+        {
+            rows.push_back ({ section.title, {}, {}, -1, true });
+            for (auto& kind : section.kinds)
+                if (auto* info = ps::kindInfo (kind))
+                    rows.push_back ({ info->title, ps::theme::rgb (info->colour), kind, -1, false });
+        }
+        rows.push_back ({ "Subsystems", {}, {}, -1, true });
+        rows.push_back ({ "New subsystem", juce::Colours::transparentBlack, {}, -3, false });
+        const auto& subs = ps::presets::subsystems();
+        for (int i = 0; i < (int) subs.size(); ++i)
+            rows.push_back ({ subs[(size_t) i].name, ps::theme::text, {}, i, false });
+        userSubsystems = ps::library::subsystems();
+        for (int i = 0; i < (int) userSubsystems.size(); ++i)
+            rows.push_back ({ userSubsystems[(size_t) i].name, ps::theme::textSoft, {}, 1000 + i, false });
+        rows.push_back ({ "Add from file...", ps::theme::textDim, {}, -2, false });
+        list.setSize (std::max (1, viewport.getMaximumVisibleWidth()), height());
+        list.repaint();
+    }
+
 private:
     struct Row
     {
         juce::String text;
         juce::Colour colour;
         std::string kind;
-        int subsystem = -1; // index into the factory subsystems, -2 to read one from a file, -3 for a new one
+        int subsystem = -1; // index into the factory subsystems, 1000+ the user's, -2 to read one from a file, -3 for a new one
         bool header = false;
     };
+    std::vector<ps::library::Entry> userSubsystems;
 
     static constexpr int rowH = 28, headerH = 34; // the dashboard's menu rows, tightened to fit the whole library
 
@@ -194,6 +206,15 @@ private:
                 owner->canvas.addModule (r.kind);
             else if (r.subsystem == -3)
                 owner->canvas.newSubsystem();
+            else if (r.subsystem >= 1000)
+            {
+                const auto& entry = owner->userSubsystems[(size_t) (r.subsystem - 1000)];
+                ps::presets::SubsystemTemplate t;
+                if (ps::presets::subsystemFromVar (juce::JSON::parse (entry.file.loadFileAsString()), t))
+                    owner->canvas.addSubsystem (t);
+                else
+                    showError ("Couldn't add " + entry.name, "The file in your Subsystems folder isn't a subsystem any more.");
+            }
             else if (r.subsystem >= 0)
                 owner->canvas.addSubsystem (ps::presets::subsystems()[(size_t) r.subsystem]);
             else if (owner->onImport)
@@ -466,23 +487,23 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     };
     canvas.onPagesChanged = [this] { tabs->repaint(); };
     canvas.onLevelChanged = [this] { tabs->repaint(); };
-    canvas.onEdited = [this] { tabs->repaint(); };
     canvas.onExportSubsystem = [this] (const ps::Node& n) { exportSubsystem (n); };
+    canvas.onExportSubsystemToFile = [this] (const ps::Node& n) { exportSubsystemToFile (n); };
+    canvas.onEdited = [this] {
+        tabs->repaint();
+        refreshPresets();
+    };
     canvas.pageAtScreen = [this] (juce::Point<int> screenPos) { return tabs->pageAtScreen (screenPos); };
     canvas.onDropTarget = [this] (const std::string& page) { tabs->setDropTarget (page); };
 
-    presetBox.setTextWhenNothingSelected ("Patch");
-    presetBox.setTooltip ("Factory patches");
-    presetBox.onChange = [this] {
-        const int i = presetBox.getSelectedId() - 1;
-        const auto& factory = ps::presets::factory();
-        if (i >= 0 && i < (int) factory.size())
-            processor.loadPatch (factory[(size_t) i].patch, factory[(size_t) i].name);
-    };
-    addAndMakeVisible (presetBox);
+    patchButton.setTooltip ("Presets, New, Open, Save, Rename");
+    patchButton.onClick = [this] { showPatchMenu(); };
+    addAndMakeVisible (patchButton);
 
     openButton.onClick = [this] { openPatch(); };
     saveButton.onClick = [this] { savePatch(); };
+    openButton.setTooltip ("Open a patch file");
+    saveButton.setTooltip ("Save the patch to its file (Save as the first time)");
     addAndMakeVisible (openButton);
     addAndMakeVisible (saveButton);
 
@@ -600,7 +621,7 @@ void PatternspaceEditor::resized()
 
     // Top bar: patch on the left, the clock on the right, all 30px controls.
     auto top = r.removeFromTop (topBarH).reduced (16, 0).withSizeKeepingCentre (r.getWidth() - 32, ps::theme::controlH).translated (0, 4);
-    presetBox.setBounds (top.removeFromLeft (220));
+    patchButton.setBounds (top.removeFromLeft (220));
     top.removeFromLeft (8);
     openButton.setBounds (top.removeFromLeft (76));
     top.removeFromLeft (6);
@@ -649,17 +670,146 @@ void PatternspaceEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void PatternspaceEditor::refreshPresets()
 {
-    presetBox.clear (juce::dontSendNotification);
-    const auto& factory = ps::presets::factory();
-    for (int i = 0; i < (int) factory.size(); ++i)
-        presetBox.addItem (factory[(size_t) i].name, i + 1);
-    for (int i = 0; i < (int) factory.size(); ++i)
-        if (factory[(size_t) i].name == processor.patchName())
+    // The name, with a dot while there are unsaved changes, like a document window.
+    const auto name = processor.patchName().isEmpty() ? juce::String ("Untitled") : processor.patchName();
+    patchButton.setButtonText ((processor.isDirty() ? juce::String::fromUTF8 ("\xE2\x97\x8F ") : juce::String()) + name);
+}
+
+void PatternspaceEditor::showPatchMenu()
+{
+    juce::PopupMenu menu, factory, user, recent;
+    menu.addItem ("New patch", [this] { newPatch(); });
+    menu.addSeparator();
+    const auto& presets = ps::presets::factory();
+    for (int i = 0; i < (int) presets.size(); ++i)
+        factory.addItem (presets[(size_t) i].name, true, presets[(size_t) i].name == processor.patchName(),
+                         [this, i] { loadPreset (ps::presets::factory()[(size_t) i]); });
+    menu.addSubMenu ("Factory presets", factory);
+    const auto mine = ps::library::presets();
+    for (auto& entry : mine)
+        user.addItem (entry.name, true, entry.name == processor.patchName(), [this, file = entry.file] { openPatchFile (file); });
+    if (! mine.empty())
+        user.addSeparator();
+    user.addItem ("Show the presets folder", [] { ps::library::presetsFolder().createDirectory(); ps::library::presetsFolder().revealToUser(); });
+    menu.addSubMenu ("My presets", user);
+    menu.addItem ("Save as preset...", [this] { savePreset(); });
+    menu.addSeparator();
+    menu.addItem ("Open...", [this] { openPatch(); });
+    for (auto& path : ps::library::recentFiles())
+        recent.addItem (juce::File (path).getFileNameWithoutExtension(), [this, path] { openPatchFile (juce::File (path)); });
+    menu.addSubMenu ("Open recent", recent, recent.getNumItems() > 0);
+    menu.addItem ("Save", [this] { savePatch(); });
+    menu.addItem ("Save as...", [this] { savePatchAs(); });
+    menu.addSeparator();
+    menu.addItem ("Rename patch...", [this] { renamePatch(); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&patchButton).withMinimumWidth (220));
+}
+
+void PatternspaceEditor::confirmDiscard (const juce::String& action, std::function<void()> go)
+{
+    if (! processor.isDirty())
+    {
+        go();
+        return;
+    }
+    auto options = juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon)
+                       .withTitle ("Unsaved changes")
+                       .withMessage ("\"" + processor.patchName() + "\" has changes that haven't been saved. " + action + " anyway?")
+                       .withButton ("Save first")
+                       .withButton ("Discard")
+                       .withButton ("Cancel")
+                       .withAssociatedComponent (this);
+    juce::AlertWindow::showAsync (options, [this, go, safe = juce::Component::SafePointer<PatternspaceEditor> (this)] (int result) {
+        if (safe == nullptr)
+            return;
+        // JUCE numbers the buttons 1, 2 and then 0 for the last one, so Cancel is 0.
+        if (result == 2) // Discard
+            go();
+        else if (result == 1) // Save first
         {
-            presetBox.setSelectedId (i + 1, juce::dontSendNotification);
+            // Save first, then carry on: a save that needs a dialog finishes asynchronously, so
+            // the action waits for it.
+            pendingAfterSave = go;
+            savePatch();
+        }
+    });
+}
+
+void PatternspaceEditor::askForText (const juce::String& title, const juce::String& prompt, const juce::String& initial,
+                                     std::function<void (const juce::String&)> done)
+{
+    auto* window = new juce::AlertWindow (title, prompt, juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor ("text", initial);
+    window->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    window->getTextEditor ("text")->selectAll();
+    window->enterModalState (true, juce::ModalCallbackFunction::create ([window, done] (int result) {
+                                 const auto text = window->getTextEditorContents ("text").trim();
+                                 if (result == 1 && text.isNotEmpty())
+                                     done (text);
+                             }),
+                             true);
+}
+
+void PatternspaceEditor::newPatch()
+{
+    confirmDiscard ("Start a new patch", [this] {
+        ps::Graph g;
+        auto clk = ps::makeNode ("clock", "clk", 14, 250);
+        clk.tagOut = { { 0, "CLK" }, { 1, "BAR" }, { 2, "2BAR" } };
+        g.nodes.push_back (clk);
+        ps::normalise (g);
+        processor.loadPatch (g, "Untitled");
+    });
+}
+
+void PatternspaceEditor::loadPreset (const ps::json::Preset& preset)
+{
+    confirmDiscard ("Load \"" + preset.name + "\"", [this, preset] { processor.loadPatch (preset.patch, preset.name); });
+}
+
+void PatternspaceEditor::openPatchFile (const juce::File& file)
+{
+    confirmDiscard ("Open \"" + file.getFileNameWithoutExtension() + "\"", [this, file] {
+        const auto text = file.loadFileAsString();
+        ps::json::Preset preset;
+        ps::Graph graph;
+        if (ps::json::presetFromString (text, preset))
+            processor.loadPatch (preset.patch, preset.name.isNotEmpty() ? preset.name : file.getFileNameWithoutExtension());
+        else if (ps::json::fromString (text, graph))
+            processor.loadPatch (graph, file.getFileNameWithoutExtension());
+        else
+        {
+            showError ("Couldn't open " + file.getFileName(), "It isn't a Patternspace patch. Subsystem files are added from the library instead.");
             return;
         }
-    presetBox.setText (processor.patchName(), juce::dontSendNotification);
+        processor.setPatchFile (file);
+        ps::library::addRecentFile (file);
+        refreshPresets();
+    });
+}
+
+void PatternspaceEditor::savePreset()
+{
+    askForText ("Save as preset", "A name for the preset. It goes in your presets folder and shows under My presets.", processor.patchName(),
+                [this] (const juce::String& name) {
+                    const auto file = ps::library::savePreset (name, processor.patch());
+                    if (file == juce::File())
+                    {
+                        showError ("Couldn't save", "Patternspace couldn't write to " + ps::library::presetsFolder().getFullPathName() + ".");
+                        return;
+                    }
+                    processor.setPatchName (file.getFileNameWithoutExtension());
+                    processor.setPatchFile (file);
+                    processor.markClean();
+                    refreshPresets();
+                });
+}
+
+void PatternspaceEditor::renamePatch()
+{
+    askForText ("Rename patch", "The patch's name. Saving writes it into the file.", processor.patchName(),
+                [this] (const juce::String& name) { processor.setPatchName (name); });
 }
 
 void PatternspaceEditor::timerCallback() { refreshTransport(); }
@@ -690,37 +840,54 @@ void PatternspaceEditor::openPatch()
     chooser = std::make_unique<juce::FileChooser> ("Open a patch", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.json");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc) {
         const auto file = fc.getResult();
-        if (file == juce::File())
-            return;
-        const auto text = file.loadFileAsString();
-        ps::json::Preset preset;
-        ps::Graph graph;
-        if (ps::json::presetFromString (text, preset))
-            processor.loadPatch (preset.patch, preset.name.isNotEmpty() ? preset.name : file.getFileNameWithoutExtension());
-        else if (ps::json::fromString (text, graph))
-            processor.loadPatch (graph, file.getFileNameWithoutExtension());
-        else
-            showError ("Couldn't open " + file.getFileName(), "It isn't a Patternspace patch. Subsystem files are added from the library instead.");
+        if (file != juce::File())
+            openPatchFile (file);
     });
 }
 
 void PatternspaceEditor::savePatch()
 {
-    const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    const auto file = processor.patchFile();
+    if (file == juce::File() || ! file.getParentDirectory().isDirectory())
+    {
+        savePatchAs();
+        return;
+    }
+    auto* obj = new juce::DynamicObject();
+    const juce::var preset (obj);
+    obj->setProperty ("name", processor.patchName());
+    obj->setProperty ("patch", ps::json::toVar (processor.patch()));
+    if (! file.replaceWithText (juce::JSON::toString (preset, false)))
+    {
+        showError ("Couldn't save", "Patternspace couldn't write " + file.getFullPathName() + ".");
+        pendingAfterSave = nullptr;
+        return;
+    }
+    processor.markClean();
+    ps::library::addRecentFile (file);
+    refreshPresets();
+    if (auto go = std::exchange (pendingAfterSave, nullptr))
+        go();
+}
+
+void PatternspaceEditor::savePatchAs()
+{
+    const auto dir = processor.patchFile() != juce::File() ? processor.patchFile().getParentDirectory()
+                                                           : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
     chooser = std::make_unique<juce::FileChooser> ("Save the patch", dir.getChildFile (juce::File::createLegalFileName (processor.patchName()) + ".json"), "*.json");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
                           [this] (const juce::FileChooser& fc) {
                               auto file = fc.getResult();
                               if (file == juce::File())
+                              {
+                                  pendingAfterSave = nullptr;
                                   return;
+                              }
                               file = file.withFileExtension ("json");
-                              auto* obj = new juce::DynamicObject();
-                              const juce::var preset (obj);
-                              obj->setProperty ("name", file.getFileNameWithoutExtension());
-                              obj->setProperty ("patch", ps::json::toVar (processor.patch()));
-                              if (! file.replaceWithText (juce::JSON::toString (preset, false)))
-                                  showError ("Couldn't save", "Patternspace couldn't write " + file.getFullPathName() + ".");
+                              processor.setPatchName (file.getFileNameWithoutExtension());
+                              processor.setPatchFile (file);
+                              savePatch();
                           });
 }
 
@@ -740,6 +907,18 @@ void PatternspaceEditor::importSubsystem()
 }
 
 void PatternspaceEditor::exportSubsystem (const ps::Node& node)
+{
+    const auto title = node.name.empty() ? juce::String ("Subsystem") : u8 (node.name);
+    askForText ("Save subsystem", "A name for it in your library. It shows under Subsystems in every patch.", title,
+                [this, node] (const juce::String& name) {
+                    if (ps::library::saveSubsystem (name, node) == juce::File())
+                        showError ("Couldn't save", "Patternspace couldn't write to " + ps::library::subsystemsFolder().getFullPathName() + ".");
+                    else
+                        library->rebuild();
+                });
+}
+
+void PatternspaceEditor::exportSubsystemToFile (const ps::Node& node)
 {
     const auto data = ps::presets::subsystemToVar (node);
     const auto title = node.name.empty() ? juce::String ("Subsystem") : u8 (node.name);

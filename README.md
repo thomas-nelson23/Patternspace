@@ -128,8 +128,14 @@ version don't match, since the app compares its own version with the tag.
 - **New subsystem** in the library adds an empty one and opens it. Add its inputs and outputs with
   the + buttons on the Inputs and Outputs modules, right-click a port there to rename it, make it
   audio or remove it, then add modules and wire them up. Right-click a subsystem to rename it.
-- **Open...** and **Save...** read and write patch files. Subsystems can be saved from their
-  right-click menu and added to any patch with **Add from file...** in the library.
+- The patch name at the top left opens the patch menu: **New patch**, the factory presets, **My
+  presets** (patches you saved with **Save as preset...**, kept in your Patternspace folder under
+  Application Support or AppData), **Open recent**, **Save**, **Save as...** and **Rename**. A dot
+  before the name means unsaved changes, and loading over them asks first. **Open...** and
+  **Save...** read and write patch files anywhere.
+- Right-click a subsystem to save it to **My subsystems**, which every patch lists in the library,
+  or to a file for sharing; **Add from file...** reads one back. The factory patches also show up
+  as programs in hosts that list them.
 
 ## Layout
 
