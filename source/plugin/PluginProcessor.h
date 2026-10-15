@@ -93,6 +93,12 @@ public:
     // Puts every generator back to the start of the phrase on the next step, like a reset arriving
     // on every rst input at once.
     void requestReset() { resetRequested = true; }
+    // Plays one note on the next block, so a MIDI out's output can be heard while choosing it.
+    void audition (int channel, int note)
+    {
+        auditionChannel = channel;
+        auditionNote = note;
+    }
 
     juce::AudioProcessorValueTreeState params;
 
@@ -100,6 +106,11 @@ private:
     static BusesProperties makeBuses();
     void sendNoteOffs (juce::MidiBuffer& midi, int numSamples);
     void allNotesOff (juce::MidiBuffer& midi, int offset);
+    // Puts a note on at `offset` samples into the block (queued for a later block when it is past
+    // the end), ends a held copy of it first, cuts off its choke group, and queues its note off.
+    void scheduleNote (juce::MidiBuffer& midi, int channel, int note, int velocity, int offset, int length, int choke, int numSamples);
+    void flushPendingOns (juce::MidiBuffer& midi, int numSamples);
+    void readSettings(); // the patch's clock rate and swing, for the audio thread
 
     // message thread
     ps::Graph graph;
@@ -134,10 +145,18 @@ private:
     bool wasPlaying = false;
     struct PendingOff
     {
-        int channel, note, samplesLeft;
+        int channel, note, samplesLeft, choke;
     };
     std::array<PendingOff, 512> pendingOffs {};
     int numPending = 0;
+    struct PendingOn
+    {
+        int channel, note, velocity, samplesLeft, length, choke;
+    };
+    std::array<PendingOn, 256> pendingOns {};
+    int numPendingOns = 0;
+    std::atomic<int> clockRate { 0 }, swingAmount { 50 };
+    std::atomic<int> auditionChannel { 10 }, auditionNote { -1 };
     std::array<std::atomic<float>, ps::Sampler::numBuses> levels {};
     std::atomic<bool> running { false }, followingHost { false }, resetRequested { false };
     std::atomic<double> tempo { 124.0 };

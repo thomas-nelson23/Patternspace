@@ -19,6 +19,8 @@ struct MidiLane
 {
     std::string name;
     int note = 36;
+    int channel = 0; // 0 uses the module's channel
+    int choke = 0;   // 0 none, else notes in the same group on this module cut each other off
 };
 
 struct Graph;
@@ -88,7 +90,8 @@ struct Graph
     std::vector<Note> notes;
     std::map<std::string, std::string> tagColours; // patch-wide colour per tag name
     // Patch-wide settings on the root graph: "follow" (0 phrase, 1 song, 2 free, see
-    // Engine::Follow), "seed" (what Probability modules decide from), "swing" later.
+    // Engine::Follow), "seed" (what Probability modules decide from), "rate" (0 a step per
+    // sixteenth, 1 per thirty-second, 2 per eighth) and "swing" (50 straight to 75, MPC style).
     std::map<std::string, int> settings;
 
     int indexOf (const std::string& id) const;

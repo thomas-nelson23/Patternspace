@@ -8,15 +8,27 @@
 #include <string>
 #include <vector>
 
-// Runs a patch one sixteenth-note step at a time. It follows the prototype's evaluation exactly:
-// modules run in dependency order, an input reads 0 from a module that hasn't run yet this step
-// (so feedback loops are one step late rather than infinite), and gate values are 0 (rest),
-// 1 (hit) or 2 (accent).
+// Runs a patch one step at a time (a sixteenth unless the Clock's rate says otherwise). It follows
+// the prototype's evaluation exactly: modules run in dependency order, an input reads 0 from a
+// module that hasn't run yet this step (so feedback loops are one step late rather than infinite).
+//
+// A gate carries its velocity: 0 is a rest, a plain hit is 96 and an accent 127, and modules such
+// as Velocity set any value between. Bits above the velocity carry a ratchet count, so a hit can
+// repeat within its step on the way to a MIDI out or Sample player. levelOf() folds a value back
+// to the prototype's 0, 1 or 2 for drawing and for the parity test.
 //
 // Threading: load() allocates and belongs on the message thread. step() and locate() don't
 // allocate and are safe on the audio thread.
 namespace ps
 {
+constexpr int kHit = 96, kAccent = 127;
+inline int velocityOf (int v) { return v & 0x7f; }
+inline bool isAccent (int v) { return velocityOf (v) > 112; }
+inline int levelOf (int v) { return velocityOf (v) == 0 ? 0 : isAccent (v) ? 2 : 1; }
+inline int ratchetsOf (int v) { return velocityOf (v) == 0 ? 1 : ((v >> 8) & 7) + 1; }
+inline int withVelocity (int v, int velocity) { return velocity <= 0 ? 0 : (v & ~0x7f) | (velocity > 127 ? 127 : velocity); }
+inline int withRatchets (int v, int n) { return velocityOf (v) == 0 ? 0 : (v & 0xff) | (((n < 1 ? 1 : n > 8 ? 8 : n) - 1) << 8); }
+
 struct StepOutput
 {
     struct NoteOn
@@ -24,6 +36,10 @@ struct StepOutput
         int channel; // 1-16
         int note;
         int velocity;
+        double length = 0.5; // in steps
+        int repeats = 1;     // ratchets within the step
+        int choke = 0;       // notes with the same non-zero group cut each other off
+        double offset = 0;   // in steps, the module's nudge
     };
     struct Hit
     {
@@ -32,6 +48,9 @@ struct StepOutput
         bool accent;
         int pitch;  // semitones
         int decay;  // 1-10
+        int velocity = kHit;
+        int repeats = 1;
+        double offset = 0; // in steps
     };
     std::vector<NoteOn> notes;
     std::vector<Hit> hits;

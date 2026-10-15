@@ -84,6 +84,8 @@ namespace
                 auto lane = obj();
                 put (lane, "name", str (l.name));
                 put (lane, "note", l.note);
+                if (l.channel) put (lane, "ch", l.channel);
+                if (l.choke) put (lane, "choke", l.choke);
                 lanes.add (lane);
             }
             put (p, "lanes", lanes);
@@ -256,13 +258,14 @@ namespace
                 {
                     if (auto* a = value.getArray())
                         for (auto& c : *a)
-                            n.cells.push_back (toInt (c) ? 1 : 0);
+                            n.cells.push_back (juce::jlimit (0, 2, toInt (c)));
                 }
                 else if (key == "lanes")
                 {
                     if (auto* a = value.getArray())
                         for (auto& l : *a)
-                            n.lanes.push_back ({ std8 (l["name"]), juce::jlimit (0, 127, toInt (l["note"], 36)) });
+                            n.lanes.push_back ({ std8 (l["name"]), juce::jlimit (0, 127, toInt (l["note"], 36)), juce::jlimit (0, 16, toInt (l["ch"], 0)),
+                                                 juce::jlimit (0, 4, toInt (l["choke"], 0)) });
                 }
                 else if (value.isInt() || value.isInt64() || value.isDouble() || value.isBool())
                     n.num[key] = toInt (value);

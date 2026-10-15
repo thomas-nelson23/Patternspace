@@ -1,9 +1,9 @@
 # Patternspace
 
 A generative, node-based drum sequencer and sample player. Patch generators (Euclidean, Random,
-Cellular, Step grid, Drum map) through shapers (Accent, Probability, Combine, Switch, Clock
-divider) into MIDI outs and sample players, wire them with cables or wireless tags, and run it in
-your DAW or on its own.
+Cellular, Step grid, Drum map) through shapers (Accent, Velocity, Probability, Combine, Switch,
+Clock divider, Shift, Ratchet, Fill, Scene) into MIDI outs and sample players, wire them with
+cables or wireless tags, and run it in your DAW or on its own.
 
 ## Formats
 
@@ -16,7 +16,18 @@ your DAW or on its own.
 The plug-in is an instrument with MIDI output:
 
 - **MIDI out** modules send notes to the host's MIDI out, so Patternspace can drive any drum
-  plug-in or hardware. Each MIDI out has 1 to 16 named outputs, each with its own note.
+  plug-in or hardware. Each MIDI out has 1 to 16 named outputs, each with its own note. Click an
+  output's name for its menu: a note from the General MIDI drum list, its own channel, a choke
+  group (an open hat that the closed hat cuts off) and **Audition** to hear it. The module's
+  **Length** is the note length in steps and **Nudge** moves its notes early or late.
+- A hit carries its velocity. Generators send 96, **Accent** raises every Nth step to its own
+  level and the rest to another, **Velocity** sets a fixed level with optional humanising, and a
+  Step grid cell clicks through off, hit and accent. **Shift** delays a pattern by whole steps,
+  **Ratchet** repeats a hit within its step (two to eight times, every time or by chance),
+  **Fill** adds seeded hits on the last bar of every few bars, **Scene** picks one of several
+  inputs, and a Switch can take its positions in random order.
+- The Clock's **1/16, 1/32, 1/8** rate sets what a step is, and its **Swing** (50 is straight,
+  about 66 a triplet feel) delays every second step.
 - **Sample player** modules play built-in drum sounds into **Audio out** modules. There are 8
   stereo outputs. Out 1 is always on; enable Outs 2 to 8 in your DAW to give each sound its own
   mixer channel. Any output left off is mixed into Out 1.

@@ -27,6 +27,11 @@ namespace
             { "prob", "Probability", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
             { "combine", "Combine", 0x9cc7cf, { "A", "B" }, { "out" }, {}, {}, 150, false },
             { "switch", "Switch", 0x9cc7cf, {}, {}, {}, {}, 150, false },
+            { "vel", "Velocity", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
+            { "shift", "Shift", 0x9cc7cf, { "in", "rst" }, { "out" }, {}, {}, 150, false },
+            { "ratchet", "Ratchet", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
+            { "fill", "Fill", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
+            { "scene", "Scene", 0x9cc7cf, {}, { "out" }, {}, {}, 150, false },
             { "sample", "Sample player", 0xff2a4f, { "trig" }, { "audio" }, {}, { P::audio }, 160, false },
             { "audio", "Audio out", 0xff2a4f, { "audio" }, {}, { P::audio }, {}, 150, false },
             { "midi", "MIDI out", 0xff2a4f, {}, {}, {}, {}, 170, false },
@@ -82,7 +87,7 @@ const std::vector<LibrarySection>& librarySections()
 {
     static const std::vector<LibrarySection> s {
         { "Generators", { "euclid", "random", "ca", "step", "grids" } },
-        { "Shapers", { "accent", "prob", "combine", "switch", "div" } },
+        { "Shapers", { "accent", "vel", "prob", "combine", "switch", "div", "shift", "ratchet", "fill", "scene" } },
         { "Sound", { "sample", "audio" } },
         { "Outputs", { "midi" } },
     };
@@ -95,6 +100,13 @@ std::vector<std::string> inputsOf (const Node& n)
         return n.ins;
     if (n.kind == "switch")
         return switchPorts (n).ins;
+    if (n.kind == "scene")
+    {
+        std::vector<std::string> r;
+        for (int i = 0; i < std::max (1, n.get ("ways", 4)); ++i)
+            r.push_back ("in " + std::to_string (i + 1));
+        return r;
+    }
     if (n.kind == "midi")
     {
         std::vector<std::string> r;
@@ -178,16 +190,29 @@ void applyDefaults (Node& n)
     if (k == "euclid") { def ("hits", 4); def ("len", 16); def ("rot", 0); }
     else if (k == "random") { def ("len", 8); def ("density", 5); def ("seed", 90); }
     else if (k == "grids") { def ("mx", 50); def ("my", 20); def ("dk", 6); def ("ds", 5); def ("dh", 6); def ("chaos", 0); }
-    else if (k == "step") { if (n.cells.size() != 16) n.cells.resize (16, 0); }
+    else if (k == "step")
+    {
+        if (n.cells.empty()) n.cells.resize (16, 0);
+        def ("len", (int) n.cells.size());
+        n.cells.resize ((size_t) clampInt (n.get ("len"), 1, 64), 0);
+    }
     else if (k == "div") def ("div", 3);
+    else if (k == "accent") { def ("every", 8); def ("lvl", kAccentVelocity); def ("soft", kHitVelocity); }
     else if (k == "prob") def ("chance", 7);
     else if (k == "combine") { if (n.mode.empty()) n.mode = "OR"; if (n.mode == "A-B") n.mode = kCombineAMinusB; }
-    else if (k == "switch") { if (n.mode != "merge") n.mode = "split"; def ("ways", 4); }
+    else if (k == "switch") { if (n.mode != "merge") n.mode = "split"; def ("ways", 4); def ("rnd", 0); }
+    else if (k == "vel") { def ("vel", 100); def ("rnd", 0); }
+    else if (k == "shift") def ("steps", 1);
+    else if (k == "ratchet") { def ("n", 2); def ("chance", 10); }
+    else if (k == "fill") { def ("bars", 4); def ("dens", 5); }
+    else if (k == "scene") { def ("ways", 4); def ("scene", 1); }
     else if (k == "sample") { if (n.sample.empty()) n.sample = "909 Kick"; def ("pitch", 0); def ("decay", 6); }
     else if (k == "audio") def ("bus", 1);
     else if (k == "midi")
     {
         def ("ch", 10);
+        def ("len", 1);
+        def ("ofs", 0);
         if (n.name.empty()) n.name = "Drums";
     }
 }
@@ -216,16 +241,30 @@ std::vector<ParamSpec> paramsOf (const Node& n)
         return { { "density", "Density", 0, 10, 10, "%" }, { "len", "Loop", 1, 64 }, { "seed", "Seed", 1, 9999 } };
     if (k == "grids")
         return { { "dk", "Kick fill", 0, 10, 10, "%" }, { "ds", "Snare fill", 0, 10, 10, "%" }, { "dh", "Hat fill", 0, 10, 10, "%" }, { "chaos", "Chaos", 0, 10, 10, "%" } };
+    if (k == "step")
+        return { { "len", "Steps", 1, 64 } };
     if (k == "div")
         return { { "div", "Divide by", 1, 16 } };
+    if (k == "accent")
+        return { { "every", "Every", 1, 32 }, { "lvl", "Accent", 1, 127 }, { "soft", "Others", 1, 127 } };
     if (k == "prob")
         return { { "chance", "Chance", 0, 10, 10, "%" } };
     if (k == "switch")
         return { { "ways", "Ways", 2, 8 } };
+    if (k == "vel")
+        return { { "vel", "Velocity", 1, 127 }, { "rnd", "Humanise", 0, 10, 10, "%" } };
+    if (k == "shift")
+        return { { "steps", "Delay", 0, 32 } };
+    if (k == "ratchet")
+        return { { "n", "Repeats", 1, 8 }, { "chance", "Chance", 0, 10, 10, "%" } };
+    if (k == "fill")
+        return { { "bars", "Every", 1, 16 }, { "dens", "Density", 0, 10, 10, "%" } };
+    if (k == "scene")
+        return { { "ways", "Inputs", 2, 8 }, { "scene", "Scene", 1, std::max (1, n.get ("ways", 4)) } };
     if (k == "sample")
         return { { "pitch", "Pitch", -12, 12 }, { "decay", "Decay", 1, 10, 10, "%" } };
     if (k == "midi")
-        return { { "nout", "Outputs", 1, 16 }, { "ch", "Channel", 1, 16 } };
+        return { { "nout", "Outputs", 1, 16 }, { "ch", "Channel", 1, 16 }, { "len", "Length", 1, 32 }, { "ofs", "Nudge", -50, 50, 1, "%" } };
     return {};
 }
 
@@ -260,8 +299,14 @@ bool stepParam (Graph& g, Node& n, const std::string& key, int delta)
             n.set ("hits", std::min (n.get ("hits"), n.get ("len")));
             n.set ("rot", std::min (n.get ("rot"), n.get ("len") - 1));
         }
-        if (n.kind == "switch")
+        if (n.kind == "switch" || n.kind == "scene")
+        {
             prunePorts (g, n);
+            if (n.kind == "scene")
+                n.set ("scene", clampInt (n.get ("scene", 1), 1, n.get ("ways", 4)));
+        }
+        if (n.kind == "step" && key == "len")
+            n.cells.resize ((size_t) n.get ("len"), 0);
         return n.get (key) != before;
     }
     return false;
@@ -328,6 +373,8 @@ int noteNumber (const std::string& s, int fallback)
         return fallback;
     }
 }
+
+const std::vector<std::pair<int, const char*>>& gmDrumList() { return gmDrums(); }
 
 const char* gmDrumName (int note)
 {

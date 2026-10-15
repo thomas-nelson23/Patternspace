@@ -100,6 +100,62 @@ void PatternspaceProcessor::allNotesOff (juce::MidiBuffer& midi, int offset)
     for (int i = 0; i < numPending; ++i)
         midi.addEvent (juce::MidiMessage::noteOff (pendingOffs[(size_t) i].channel, pendingOffs[(size_t) i].note), offset);
     numPending = 0;
+    numPendingOns = 0;
+}
+
+void PatternspaceProcessor::scheduleNote (juce::MidiBuffer& midi, int channel, int note, int velocity, int offset, int length, int choke, int n)
+{
+    if (offset >= n)
+    {
+        if (numPendingOns < (int) pendingOns.size())
+            pendingOns[(size_t) numPendingOns++] = { channel, note, velocity, offset - n, length, choke };
+        return;
+    }
+    offset = std::max (0, offset);
+    // A note that is still held ends just before it plays again, and so does the rest of its choke
+    // group (an open hat when the closed one hits).
+    for (int i = 0; i < numPending;)
+    {
+        const auto& p = pendingOffs[(size_t) i];
+        const bool same = p.channel == channel && p.note == note;
+        if (same || (choke != 0 && p.choke == choke))
+        {
+            midi.addEvent (juce::MidiMessage::noteOff (p.channel, p.note), offset);
+            pendingOffs[(size_t) i] = pendingOffs[(size_t) --numPending];
+        }
+        else
+            ++i;
+    }
+    midi.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) juce::jlimit (1, 127, velocity)), offset);
+    length = std::max (1, length);
+    if (offset + length < n)
+        midi.addEvent (juce::MidiMessage::noteOff (channel, note), offset + length);
+    else if (numPending < (int) pendingOffs.size())
+        pendingOffs[(size_t) numPending++] = { channel, note, offset + length - n, choke };
+    else // the queue is full: a short note beats a stuck one
+        midi.addEvent (juce::MidiMessage::noteOff (channel, note), n - 1);
+}
+
+void PatternspaceProcessor::flushPendingOns (juce::MidiBuffer& midi, int n)
+{
+    const auto queued = pendingOns;
+    const int count = numPendingOns;
+    numPendingOns = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        const auto& p = queued[(size_t) i];
+        scheduleNote (midi, p.channel, p.note, p.velocity, p.samplesLeft, p.length, p.choke, n);
+    }
+}
+
+void PatternspaceProcessor::readSettings()
+{
+    auto setting = [this] (const char* key, int fallback) {
+        const auto it = graph.settings.find (key);
+        return it == graph.settings.end() ? fallback : it->second;
+    };
+    clockRate = juce::jlimit (0, 2, setting ("rate", 0));
+    swingAmount = juce::jlimit (50, 75, setting ("swing", 50));
 }
 
 void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -109,6 +165,7 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     buffer.clear();
     midi.clear();
     sendNoteOffs (midi, n);
+    flushPendingOns (midi, n);
 
     // Follow the host's transport when it has one and sync is on; otherwise run our own clock.
     const double sr = getSampleRate() > 0 ? getSampleRate() : 44100.0;
@@ -140,6 +197,8 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const auto barStartStep = (std::int64_t) std::llround (barStartPpq * 4.0);
     bpm = juce::jlimit (20.0, 999.0, bpm);
     const double samplesPerBeat = sr * 60.0 / bpm;
+    if (const int note = auditionNote.exchange (-1); note >= 0)
+        scheduleNote (midi, juce::jlimit (1, 16, auditionChannel.load()), juce::jlimit (0, 127, note), 100, 0, (int) (samplesPerBeat / 8.0), 0, n);
     if (! hostKnown)
     {
         playing = runParam->load() > 0.5f;
@@ -159,42 +218,51 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     else
     {
         const double start = ppq * 4.0, end = start + n / samplesPerBeat * 4.0;
-        const int gate = std::max (1, (int) (samplesPerBeat / 8.0)); // half a sixteenth
+        // The Clock's rate: a step per sixteenth, two per sixteenth, or one every other sixteenth.
+        const int rate = clockRate.load();
+        const int sub = rate == 1 ? 2 : 1, stride = rate == 2 ? 2 : 1;
+        const double sixteenth = samplesPerBeat / 4.0, stepLen = sixteenth * stride / sub;
+        // MPC-style swing: 50 is straight, 66 about a triplet, 75 the most; every second step
+        // comes late by that share of a step.
+        const double swing = juce::jlimit (0.0, 0.5, (swingAmount.load() - 50) / 50.0);
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (engine)
         {
-            engine->setMeter (stepsPerBar, barStartStep);
+            engine->setMeter (std::max (1, stepsPerBar * sub / stride), barStartStep * sub / stride);
             for (auto k = (std::int64_t) std::ceil (start - 1.0e-7); (double) k < end - 1.0e-7; ++k)
             {
-                const int offset = juce::jlimit (0, n - 1, (int) std::lround ((k - start) / 4.0 * samplesPerBeat));
-                if (resetRequested.exchange (false))
-                    engine->resetState(); // and the locate below re-phases from the patch's follow point
-                if (! wasPlaying || engine->lastStep() != k - 1)
-                    engine->locate (k); // started, looped or jumped: get the generators back in phase
-                wasPlaying = true;
-
-                stepOut.clear();
-                engine->step (k, stepOut);
-                for (auto& note : stepOut.notes)
+                if (stride == 2 && ((k % 2) + 2) % 2 != 0)
+                    continue;
+                const double base = (k - start) / 4.0 * samplesPerBeat;
+                for (int s = 0; s < sub; ++s)
                 {
-                    // A note that is still held ends just before it plays again.
-                    for (int i = 0; i < numPending; ++i)
-                        if (pendingOffs[(size_t) i].channel == note.channel && pendingOffs[(size_t) i].note == note.note)
+                    const std::int64_t e = (k - ((k % stride) + stride) % stride) / stride * sub + s;
+                    if (resetRequested.exchange (false))
+                        engine->resetState(); // and the locate below re-phases from the patch's follow point
+                    if (! wasPlaying || engine->lastStep() != e - 1)
+                        engine->locate (e); // started, looped or jumped: get the generators back in phase
+                    wasPlaying = true;
+
+                    stepOut.clear();
+                    engine->step (e, stepOut);
+                    const double at = base + s * stepLen + (((e % 2) + 2) % 2 != 0 ? swing * stepLen : 0.0);
+                    for (auto& note : stepOut.notes)
+                    {
+                        const int repeats = std::max (1, note.repeats);
+                        for (int r = 0; r < repeats; ++r)
                         {
-                            midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), offset);
-                            pendingOffs[(size_t) i] = pendingOffs[(size_t) --numPending];
-                            break;
+                            const int offset = (int) std::lround (at + (note.offset + (double) r / repeats) * stepLen);
+                            const int length = (int) std::lround ((repeats > 1 ? 0.5 / repeats : note.length) * stepLen);
+                            scheduleNote (midi, note.channel, note.note, note.velocity, offset, length, note.choke, n);
                         }
-                    midi.addEvent (juce::MidiMessage::noteOn (note.channel, note.note, (juce::uint8) note.velocity), offset);
-                    if (offset + gate < n)
-                        midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), offset + gate);
-                    else if (numPending < (int) pendingOffs.size())
-                        pendingOffs[(size_t) numPending++] = { note.channel, note.note, offset + gate - n };
-                    else // the queue is full: a short note beats a stuck one
-                        midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), n - 1);
+                    }
+                    for (auto& hit : stepOut.hits)
+                    {
+                        const int repeats = std::max (1, hit.repeats);
+                        for (int r = 0; r < repeats; ++r)
+                            sampler.trigger (hit, std::max (0, (int) std::lround (at + (hit.offset + (double) r / repeats) * stepLen)));
+                    }
                 }
-                for (auto& hit : stepOut.hits)
-                    sampler.trigger (hit, offset);
             }
         }
         wasPlaying = true;
@@ -291,6 +359,7 @@ void PatternspaceProcessor::commitPatch (const juce::String& undoGroup)
             committed = { graph, name };
         }
     }
+    readSettings();
     auto next = std::make_unique<ps::Engine>();
     next->load (graph);
     next->setViewPath (viewPath);

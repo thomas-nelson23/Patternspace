@@ -82,9 +82,13 @@ juce::String paramValue (const ps::Node& n, const ps::ParamSpec& spec)
     return juce::String (v) + spec.suffix;
 }
 
-std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
+std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const std::map<std::string, int>& patchSettings)
 {
     std::vector<Item> items;
+    auto settings = [&patchSettings] (const char* key) {
+        const auto it = patchSettings.find (key);
+        return it == patchSettings.end() ? 0 : it->second;
+    };
     const float inner = w - padX * 2;
     float cy = y;
     auto add = [&] (ItemType t, float h, std::string key = {}, juce::String text = {}, juce::String value = {}) {
@@ -99,6 +103,8 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
     if (k == "clock")
     {
         add (ItemType::bigText, 18, "bpm");
+        add (ItemType::modes, 18, "rate");
+        add (ItemType::stepper, stepperH, "swing", "Swing", juce::String (std::max (50, std::min (75, settings ("swing")))) + "%");
         add (ItemType::text, 12, {}, "Jumps line up with:");
         add (ItemType::modes, 18, "follow");
     }
@@ -116,8 +122,9 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
     }
     else if (k == "step")
     {
-        add (ItemType::text, 12, {}, "Click cells to edit");
-        add (ItemType::cells, 12, "edit");
+        steppers();
+        add (ItemType::text, 12, {}, "Click a cell: off, hit, accent");
+        add (ItemType::cells, n.get ("len", 16) > 32 ? 25.0f : 12.0f, "edit");
     }
     else if (k == "grids")
     {
@@ -133,15 +140,24 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
         cy += pad + 6;
         add (ItemType::drumRows, 3 * 8 + 2 * 3);
     }
-    else if (k == "div" || k == "prob")
+    else if (k == "div" || k == "prob" || k == "vel" || k == "shift" || k == "ratchet" || k == "scene")
         steppers();
+    else if (k == "fill")
+    {
+        steppers();
+        add (ItemType::text, 12, {}, "Adds hits on the last bar");
+    }
     else if (k == "accent")
-        add (ItemType::text, 12, {}, "Beats 127, the rest 96");
+    {
+        steppers();
+        add (ItemType::text, 12, {}, "Every " + juce::String (n.get ("every", 8)) + "th step hits harder");
+    }
     else if (k == "combine")
         add (ItemType::modes, 18, "combine");
     else if (k == "switch")
     {
         add (ItemType::modes, 18, "switch");
+        add (ItemType::modes, 18, "order");
         steppers();
         add (ItemType::switchPos, 14);
     }
@@ -582,7 +598,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
     }
     const int rows = (int) std::max (ins.size(), outs.size());
     L.bodyTop = rows > 0 ? ioTop + rows * rowH + 4 : headerH + 6;
-    const auto items = bodyItems (n, x, y + L.bodyTop, w);
+    const auto items = bodyItems (n, x, y + L.bodyTop, w, processor.patch().settings);
     float bottom = y + L.bodyTop;
     for (auto& it : items)
     {
@@ -597,12 +613,19 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 break;
             case ItemType::cells:
                 if (it.key == "edit")
-                    for (int c = 0; c < 16; ++c)
-                        L.zones.push_back ({ { it.r.getX() + it.r.getWidth() * c / 16.0f, it.r.getY() - 2, it.r.getWidth() / 16.0f, it.r.getHeight() + 4 }, ZoneType::cell, {}, c });
+                {
+                    // the same grid paintCells draws: up to 32 a row, two rows beyond
+                    const int count = (int) n.cells.size();
+                    const int perRow = count > 32 ? (count + 1) / 2 : std::max (1, count);
+                    const int rows = count > 32 ? 2 : 1;
+                    const float cw = it.r.getWidth() / perRow, ch = it.r.getHeight() / rows;
+                    for (int c = 0; c < count; ++c)
+                        L.zones.push_back ({ { it.r.getX() + cw * (c % perRow), it.r.getY() + ch * (c / perRow) - 1, cw, ch + 2 }, ZoneType::cell, {}, c });
+                }
                 break;
             case ItemType::modes:
             {
-                const int count = it.key == "combine" ? (int) ps::combineModes().size() : it.key == "follow" ? 3 : 2;
+                const int count = it.key == "combine" ? (int) ps::combineModes().size() : it.key == "follow" || it.key == "rate" ? 3 : 2;
                 for (int m = 0; m < count; ++m)
                     L.zones.push_back ({ { it.r.getX() + it.r.getWidth() * m / count, it.r.getY(), it.r.getWidth() / count, it.r.getHeight() }, ZoneType::mode, it.key, m });
                 break;
@@ -633,6 +656,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
         for (int q = 0; q < (int) n.lanes.size(); ++q)
         {
             const float ry = y + ioTop + q * rowH;
+            L.zones.push_back ({ { x + 12, ry, w - 80, rowH }, ZoneType::lane, {}, q });
             L.zones.push_back ({ { x + w - 62, ry, 14, rowH }, ZoneType::laneNote, {}, -(q + 1) });
             L.zones.push_back ({ { x + w - 26, ry, 14, rowH }, ZoneType::laneNote, {}, q + 1 });
             L.zones.push_back ({ { x + w - 48, ry, 22, rowH }, ZoneType::paramValue, "lane" + std::to_string (q), 0 });
@@ -866,6 +890,7 @@ void PatchCanvas::paintHelp (juce::Graphics& g)
         { "Ctrl/Cmd scroll, pinch", "Zoom. + - 0 step and reset it" },
         { "Drag output to input", "Wire. Drag a wired input to move or remove the wire" },
         { "Click a port", "Tag it: pick a tag, colour it, see who listens" },
+        { "Click a MIDI output's name", "Its menu: note, channel, choke group, audition" },
         { "Double-click empty space", "Write a note. Right-click for a block" },
         { "Ctrl/Cmd G, B", "Group the selection into a subsystem; draw a block around it" },
         { "M", "Minimap on or off. Click it to move around" },
@@ -1110,7 +1135,7 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
                 g.setColour (c);
                 g.drawText (u8 (ps::noteName (lane.note)), juce::Rectangle<float> (L.box.getRight() - 50, ry, 24, rowH), juce::Justification::centred);
                 const int v = viewIn (index, q);
-                drawLed (g, { L.box.getRight() - 8, ry + rowH / 2 }, v > 1 ? textBright : c, v > 0);
+                drawLed (g, { L.box.getRight() - 8, ry + rowH / 2 }, ps::isAccent (v) ? textBright : c, v > 0);
             }
         }
         else
@@ -1196,7 +1221,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
     using namespace ps::theme;
     const auto c = kindColour (n);
     const ps::Engine::View* v = viewValid && index < (int) view.size() ? &view[(size_t) index] : nullptr;
-    for (auto& it : bodyItems (n, L.box.getX(), L.box.getY() + L.bodyTop, L.box.getWidth()))
+    for (auto& it : bodyItems (n, L.box.getX(), L.box.getY() + L.bodyTop, L.box.getWidth(), processor.patch().settings))
     {
         const auto r = it.r;
         switch (it.type)
@@ -1250,22 +1275,31 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
             }
             case ItemType::modes:
             {
-                const bool combine = it.key == "combine", follow = it.key == "follow";
+                const bool combine = it.key == "combine", follow = it.key == "follow", rate = it.key == "rate", order = it.key == "order";
                 const auto& modes = ps::combineModes();
-                const int count = combine ? (int) modes.size() : follow ? 3 : 2;
+                const int count = combine ? (int) modes.size() : follow || rate ? 3 : 2;
                 const int ways = n.get ("ways", 4);
                 const int followNow = settingOf ("follow");
+                const int rateNow = juce::jlimit (0, 2, settingOf ("rate"));
                 static const char* followNames[] = { "Phrase", "Song", "Free" };
+                static const char* rateNames[] = { "1/16", "1/32", "1/8" };
+                static const char* orderNames[] = { "In turn", "Random" };
                 for (int m = 0; m < count; ++m)
                 {
                     const auto b = juce::Rectangle<float> (r.getX() + r.getWidth() * m / count, r.getY(), r.getWidth() / count, r.getHeight()).reduced (1, 0);
-                    const bool on = combine ? n.mode == modes[(size_t) m] : follow ? m == followNow : (m == 0) == (n.mode != "merge");
+                    const bool on = combine ? n.mode == modes[(size_t) m]
+                                  : follow  ? m == followNow
+                                  : rate    ? m == rateNow
+                                  : order   ? m == (n.get ("rnd") ? 1 : 0)
+                                            : (m == 0) == (n.mode != "merge");
                     paintSegment (g, b, on, c);
                     g.setColour (on ? onAccent : textSoft);
                     g.setFont (sans (9.5f, on ? Weight::semibold : Weight::regular));
                     const juce::String arrow = juce::String::fromUTF8 (" \xE2\x86\x92 ");
                     const auto caption = combine ? u8 (modes[(size_t) m])
                                        : follow  ? juce::String (followNames[m])
+                                       : rate    ? juce::String (rateNames[m])
+                                       : order   ? juce::String (orderNames[m])
                                                  : (m == 0 ? "1" + arrow + juce::String (ways) : juce::String (ways) + arrow + "1");
                     g.drawText (caption, b, juce::Justification::centred);
                 }
@@ -1859,6 +1893,8 @@ void PatchCanvas::mouseDoubleClick (const juce::MouseEvent& e)
             if (q < (int) n.lanes.size())
                 current = u8 (ps::noteName (n.lanes[(size_t) q].note));
         }
+        else if (textKey == "swing")
+            current = juce::String (std::max (50, settingOf ("swing")));
         else
             for (auto& spec : ps::paramsOf (n))
                 if (textKey == spec.key)
@@ -2133,11 +2169,17 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
             changed = ps::stepParam (patch, n, z.key, z.value);
             break;
         case ZoneType::mode:
-            if (z.key == "follow")
+            if (z.key == "follow" || z.key == "rate")
             {
                 auto& settings = processor.patch().settings;
-                changed = settings["follow"] != z.value;
-                settings["follow"] = z.value;
+                changed = settings[z.key] != z.value;
+                settings[z.key] = z.value;
+                break;
+            }
+            if (z.key == "order")
+            {
+                changed = n.get ("rnd") != z.value;
+                n.set ("rnd", z.value);
                 break;
             }
             if (z.key == "combine")
@@ -2156,9 +2198,12 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
         case ZoneType::cell:
             if (z.value < (int) n.cells.size())
             {
-                n.cells[(size_t) z.value] = n.cells[(size_t) z.value] ? 0 : 1;
+                n.cells[(size_t) z.value] = (n.cells[(size_t) z.value] + 1) % 3; // off, hit, accent
                 changed = true;
             }
+            break;
+        case ZoneType::lane:
+            showLaneMenu (index, z.value);
             break;
         case ZoneType::sample:
         {
@@ -2226,7 +2271,14 @@ void PatchCanvas::applyParamDelta (int index, const std::string& key, int delta,
     auto& n = patch.nodes[(size_t) index];
     selection = { n.id };
     bool changed = false;
-    if (key.rfind ("lane", 0) == 0)
+    if (key == "swing")
+    {
+        auto& settings = processor.patch().settings;
+        const int before = settings.count ("swing") ? settings["swing"] : 50;
+        settings["swing"] = juce::jlimit (50, 75, before + delta);
+        changed = settings["swing"] != before;
+    }
+    else if (key.rfind ("lane", 0) == 0)
     {
         const int q = std::stoi (key.substr (4));
         if (q < (int) n.lanes.size())
@@ -2757,6 +2809,16 @@ void PatchCanvas::finishTagEdit (bool keep)
         if (typed.isEmpty())
             return;
         const int index = patch.indexOf (tagNode);
+        if (textKey.rfind ("name", 0) == 0)
+        {
+            const int q = std::stoi (textKey.substr (4));
+            if (q < (int) n->lanes.size() && n->lanes[(size_t) q].name != typed.toStdString())
+            {
+                n->lanes[(size_t) q].name = typed.toStdString();
+                edited();
+            }
+            return;
+        }
         if (textKey.rfind ("lane", 0) == 0)
         {
             const int q = std::stoi (textKey.substr (4));
@@ -2768,6 +2830,13 @@ void PatchCanvas::finishTagEdit (bool keep)
                 else
                     showMessage ("Type a note like C1 or F#2, or a number 0 to 127");
             }
+            return;
+        }
+        if (textKey == "swing")
+        {
+            const auto& settings = processor.patch().settings;
+            const int now = settings.count ("swing") ? settings.at ("swing") : 50;
+            applyParamDelta (index, textKey, typed.retainCharacters ("0123456789").getIntValue() - now, {});
             return;
         }
         for (auto& spec : ps::paramsOf (*n))
@@ -3490,6 +3559,41 @@ void PatchCanvas::paintKindGlyph (juce::Graphics& g, const std::string& k, juce:
         g.drawRoundedRectangle (juce::Rectangle<float> (11, 9).withCentre (c), 2, 1.1f);
         g.fillRoundedRectangle (juce::Rectangle<float> (5, 3.5f).withCentre (c), 1);
     }
+    else if (k == "vel")
+    {
+        // three bars rising, like a velocity lane
+        for (int i = 0; i < 3; ++i)
+            g.fillRect (juce::Rectangle<float> (2.4f, 3.0f + i * 3.0f).withCentre (c.translated ((float) i * 4.0f - 4.0f, 0)).withBottomY (c.y + 5));
+    }
+    else if (k == "shift")
+    {
+        p.startNewSubPath (c.translated (-5, -3));
+        p.lineTo (c.translated (2, -3));
+        p.startNewSubPath (c.translated (-2, 3));
+        p.lineTo (c.translated (5, 3));
+        g.strokePath (p, thin);
+        g.fillEllipse (juce::Rectangle<float> (2.4f, 2.4f).withCentre (c.translated (-5, -3)));
+        g.fillEllipse (juce::Rectangle<float> (2.4f, 2.4f).withCentre (c.translated (-2, 3)));
+    }
+    else if (k == "ratchet")
+    {
+        for (int i = 0; i < 4; ++i)
+            g.fillRect (juce::Rectangle<float> (1.6f, 9.0f).withCentre (c.translated ((float) i * 3.0f - 4.5f, 0)));
+    }
+    else if (k == "fill")
+    {
+        p.startNewSubPath (c.translated (-5, 4));
+        p.lineTo (c.translated (-2, 1));
+        p.lineTo (c.translated (0, 3));
+        p.lineTo (c.translated (2, -2));
+        p.lineTo (c.translated (5, -5));
+        g.strokePath (p, thin);
+    }
+    else if (k == "scene")
+    {
+        for (int i = 0; i < 3; ++i)
+            g.drawRect (juce::Rectangle<float> (4.0f, 4.0f).withCentre (c.translated ((float) i * 4.5f - 4.5f, 0)), i == 1 ? 2.0f : 0.8f);
+    }
     else if (k == "subin" || k == "subout")
     {
         const float dir = k == "subin" ? 1.0f : 1.0f;
@@ -3503,4 +3607,97 @@ void PatchCanvas::paintKindGlyph (juce::Graphics& g, const std::string& k, juce:
     }
     else
         drawLed (g, c, colour, true, 5.0f);
+}
+
+// ---- MIDI out lanes --------------------------------------------------------------------------
+
+void PatchCanvas::showLaneMenu (int index, int lane)
+{
+    auto& patch = graph();
+    if (index < 0 || index >= (int) patch.nodes.size())
+        return;
+    const auto& n = patch.nodes[(size_t) index];
+    if (n.kind != "midi" || lane < 0 || lane >= (int) n.lanes.size())
+        return;
+    const auto id = n.id;
+    const auto current = n.lanes[(size_t) lane];
+    const int moduleChannel = n.get ("ch", 10);
+    // Each action finds the lane again, since the menu runs after this call returns.
+    auto with = [this, id, lane] (std::function<void (ps::MidiLane&)> change) {
+        return [this, id, lane, change] {
+            if (auto* m = graph().find (id))
+                if (lane < (int) m->lanes.size())
+                {
+                    change (m->lanes[(size_t) lane]);
+                    edited();
+                }
+        };
+    };
+    juce::PopupMenu menu, notes, channels, chokes;
+    menu.addSectionHeader (u8 (current.name) + "  " + u8 (ps::noteName (current.note)));
+    menu.addItem ("Audition", [this, current, moduleChannel] {
+        processor.audition (current.channel > 0 ? current.channel : moduleChannel, current.note);
+    });
+    menu.addItem ("Rename...", [this, index, lane] {
+        const auto& m = graph().nodes[(size_t) index];
+        tagNode = m.id;
+        textKey = "name" + std::to_string (lane);
+        textTarget = TextTarget::param;
+        const juce::Rectangle<float> r ((float) m.x + 8, (float) m.y + ioTop + lane * rowH - 3, nodeWidth (m) - 90, rowH + 6);
+        showTextEditor ({ toScreen (r.getTopLeft()).toInt(), toScreen (r.getBottomRight()).toInt() }, u8 (m.lanes[(size_t) lane].name), "Output name");
+    });
+    for (auto& [note, name] : ps::gmDrumList())
+        notes.addItem (juce::String (name) + "  " + u8 (ps::noteName (note)), true, note == current.note, with ([note, name = juce::String (name)] (ps::MidiLane& l) {
+                           // a lane still named after its drum follows the note
+                           if (auto* old = ps::gmDrumName (l.note); old == nullptr || l.name == old)
+                               l.name = name.toStdString();
+                           l.note = note;
+                       }));
+    notes.addSeparator();
+    notes.addItem ("Type a note...", [this, index, lane] {
+        const auto& m = graph().nodes[(size_t) index];
+        tagNode = m.id;
+        textKey = "lane" + std::to_string (lane);
+        textTarget = TextTarget::param;
+        const juce::Rectangle<float> r ((float) m.x + nodeWidth (m) - 52, (float) m.y + ioTop + lane * rowH - 3, 30, rowH + 6);
+        showTextEditor ({ toScreen (r.getTopLeft()).toInt(), toScreen (r.getBottomRight()).toInt() }, u8 (ps::noteName (m.lanes[(size_t) lane].note)), "C1");
+        tagEditor->setJustification (juce::Justification::centred);
+    });
+    menu.addSubMenu ("Note", notes);
+    channels.addItem ("Module's (" + juce::String (moduleChannel) + ")", true, current.channel == 0, with ([] (ps::MidiLane& l) { l.channel = 0; }));
+    for (int ch = 1; ch <= 16; ++ch)
+        channels.addItem (juce::String (ch), true, current.channel == ch, with ([ch] (ps::MidiLane& l) { l.channel = ch; }));
+    menu.addSubMenu ("Channel", channels);
+    chokes.addItem ("None", true, current.choke == 0, with ([] (ps::MidiLane& l) { l.choke = 0; }));
+    for (int grp = 1; grp <= 4; ++grp)
+        chokes.addItem ("Group " + juce::String (grp), true, current.choke == grp, with ([grp] (ps::MidiLane& l) { l.choke = grp; }));
+    menu.addSubMenu ("Choke group", chokes);
+    menu.addSeparator();
+    menu.addItem ("Remove output", (int) n.lanes.size() > 1, false, [this, id, lane] {
+        auto& p = graph();
+        if (auto* m = p.find (id))
+            if (lane < (int) m->lanes.size() && m->lanes.size() > 1)
+            {
+                // the wires and tags below it move up with the rows they belong to
+                for (auto it = p.links.begin(); it != p.links.end();)
+                {
+                    if (it->b == id && it->q == lane)
+                        it = p.links.erase (it);
+                    else
+                    {
+                        if (it->b == id && it->q > lane)
+                            --it->q;
+                        ++it;
+                    }
+                }
+                std::map<int, std::string> tags;
+                for (auto& [q, t] : m->tagIn)
+                    if (q != lane)
+                        tags[q > lane ? q - 1 : q] = t;
+                m->tagIn = tags;
+                m->lanes.erase (m->lanes.begin() + lane);
+                edited();
+            }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
