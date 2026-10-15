@@ -1,0 +1,331 @@
+{
+  "name": "Ratchet Trap",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "kick",
+        "k": "step",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "cells": [
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "snr",
+        "k": "euclid",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "SNARE"
+        },
+        "p": {
+          "hits": 2,
+          "len": 16,
+          "rot": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "hat",
+        "k": "euclid",
+        "x": 224,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 16,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "rat",
+        "k": "ratchet",
+        "x": 434,
+        "y": 400,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "HATS"
+        },
+        "p": {
+          "n": 3,
+          "chance": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "fill",
+        "k": "fill",
+        "x": 434,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK"
+        },
+        "tagOut": {
+          "0": "ROLL"
+        },
+        "p": {
+          "bars": 2,
+          "dens": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "vel",
+        "k": "vel",
+        "x": 644,
+        "y": 400,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "vel": 90,
+          "rnd": 25
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 900,
+        "y": 100,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "SNARE",
+          "3": "ROLL"
+        },
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Trap",
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Snare",
+              "note": 38
+            },
+            {
+              "name": "Hats",
+              "note": 42
+            },
+            {
+              "name": "Roll",
+              "note": 40
+            }
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sk",
+        "k": "sample",
+        "x": 900,
+        "y": 420,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK"
+        },
+        "tagOut": {},
+        "p": {
+          "pitch": -2,
+          "decay": 8,
+          "choke": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "ss",
+        "k": "sample",
+        "x": 900,
+        "y": 540,
+        "c": 0,
+        "tagIn": {
+          "0": "SNARE"
+        },
+        "tagOut": {},
+        "p": {
+          "decay": 5,
+          "sample": "Crack Snare"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sh",
+        "k": "sample",
+        "x": 900,
+        "y": 660,
+        "c": 0,
+        "tagIn": {
+          "0": "HATS"
+        },
+        "tagOut": {},
+        "p": {
+          "decay": 2,
+          "lvl": 70,
+          "cut": 85,
+          "sample": "Tight Hat"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "o1",
+        "k": "audio",
+        "x": 1120,
+        "y": 440,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "o2",
+        "k": "audio",
+        "x": 1120,
+        "y": 560,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 2
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "o3",
+        "k": "audio",
+        "x": 1120,
+        "y": 680,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "bus": 3
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "hat",
+        "p": 0,
+        "b": "rat",
+        "q": 0
+      },
+      {
+        "a": "rat",
+        "p": 0,
+        "b": "vel",
+        "q": 0
+      },
+      {
+        "a": "vel",
+        "p": 0,
+        "b": "m",
+        "q": 2
+      },
+      {
+        "a": "sk",
+        "p": 0,
+        "b": "o1",
+        "q": 0
+      },
+      {
+        "a": "ss",
+        "p": 0,
+        "b": "o2",
+        "q": 0
+      },
+      {
+        "a": "sh",
+        "p": 0,
+        "b": "o3",
+        "q": 0
+      }
+    ],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "n0",
+        "text": "Ratchet rolls the hats three times a step, 30% of the time. Fill adds a roll on every second bar.",
+        "x": 224,
+        "y": 560,
+        "w": 220,
+        "pg": "p1"
+      }
+    ],
+    "settings": {
+      "follow": 0,
+      "seed": 1234,
+      "rate": 0,
+      "swing": 54
+    }
+  }
+}

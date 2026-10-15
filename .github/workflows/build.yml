@@ -34,6 +34,18 @@ jobs:
             configure: -G "Visual Studio 17 2022" -A x64
             formats: VST3 CLAP Standalone
 
+    # Signing is optional: with none of these secrets set, the build is unsigned as before.
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      MACOS_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -58,9 +70,15 @@ jobs:
         shell: bash
         run: cmake --build build --config Release --parallel 4
 
-      - name: Test the patch engine
+      # The engine tests, and the headless window tests, which need a display.
+      - name: Test the patch engine and the window
         shell: bash
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a ctest --test-dir build -C Release --output-on-failure
+          else
+            ctest --test-dir build -C Release --output-on-failure
+          fi
 
       - name: Validate the VST3 with pluginval
         shell: bash
@@ -82,6 +100,49 @@ jobs:
           $PLUGINVAL --strictness-level 10 --validate-in-process --timeout-ms 600000 \
             --validate "build/Patternspace_artefacts/Release/VST3/Patternspace.vst3"
 
+      # Logic and GarageBand run auval on every AU, so a unit that fails it never loads there.
+      - name: Validate the Audio Units with auval and pluginval
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "build/Patternspace_artefacts/Release/AU/Patternspace.component" ~/Library/Audio/Plug-Ins/Components/
+          cp -R "build/PatternspaceMidiFX_artefacts/Release/AU/Patternspace MIDI.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v aumu Psq1 Pspc
+          auval -v aumi Psq2 Pspc
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --validate-in-process --timeout-ms 600000 \
+            --validate ~/Library/Audio/Plug-Ins/Components/Patternspace.component
+
+      - name: Validate the CLAP with clap-validator
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          case "$RUNNER_OS" in
+            Linux) pattern=ubuntu ;;
+            macOS) pattern=macos-universal ;;
+            Windows) pattern=windows ;;
+          esac
+          # Ask the API with the workflow token: anonymous calls hit the rate limit and return no assets.
+          url=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/repos/free-audio/clap-validator/releases/tags/0.4.1 \
+            | jq -r --arg p "$pattern" '.assets[] | select(.name | test($p)) | .browser_download_url' | head -1)
+          [ -n "$url" ] || { echo "::error::no clap-validator release asset matches $pattern"; exit 1; }
+          echo "Using $url"
+          curl -sSL -o clap-validator.zip "$url"
+          # the Linux and macOS zips hold a tarball; the Windows one the .exe itself
+          mkdir -p clap-validator && (cd clap-validator && unzip -qo ../clap-validator.zip && for t in *.tar.gz; do [ -f "$t" ] && tar xzf "$t"; done; true)
+          validator=$(find clap-validator -type f \( -name clap-validator -o -name clap-validator.exe \) | head -1)
+          [ -n "$validator" ] || { echo "::error::clap-validator not found in the archive"; find clap-validator; exit 1; }
+          chmod +x "$validator"
+          clap="build/Patternspace_artefacts/Release/CLAP/Patternspace.clap"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a "$validator" validate --only-failed "$clap"
+          else
+            "$validator" validate --only-failed "$clap"
+          fi
+
       - name: Collect the plug-ins
         shell: bash
         run: |
@@ -94,6 +155,37 @@ jobs:
             cp -R "build/PatternspaceMidiFX_artefacts/Release/AU/." "dist/AU/"
           fi
           find dist -name "*.a" -o -name "*.lib" -o -name "*.exp" | xargs rm -f
+
+      # ---- code signing, only when the repository has the certificates (see README) ----------
+      - name: Sign the macOS bundles
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        shell: bash
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$RUNNER_TEMP" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$RUNNER_TEMP" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$RUNNER_TEMP" "$keychain"
+          security list-keychain -d user -s "$keychain" login.keychain
+          for bundle in dist/*/*.app dist/*/*.component dist/*/*.vst3 dist/*/*.clap; do
+            [ -e "$bundle" ] || continue
+            codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$bundle"
+            codesign --verify --deep --strict "$bundle"
+          done
+
+      - name: Sign the Windows binaries
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: bash
+        run: |
+          echo "$WINDOWS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.pfx"
+          signtool=$(ls "/c/Program Files (x86)/Windows Kits/10/bin/"*/x64/signtool.exe | tail -1)
+          echo "SIGNTOOL=$signtool" >> "$GITHUB_ENV"
+          echo "SIGN_PFX=$(cygpath -w "$RUNNER_TEMP/certificate.pfx")" >> "$GITHUB_ENV"
+          find dist -type f \( -name "*.exe" -o -name "*.vst3" -o -name "*.clap" -o -name "*.dll" \) | while read -r f; do
+            "$signtool" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f "$RUNNER_TEMP/certificate.pfx" /p "$WINDOWS_CERTIFICATE_PASSWORD" "$f"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -110,16 +202,28 @@ jobs:
           mkdir -p installer
           case "$RUNNER_OS" in
             macOS)
-              packaging/macos/build-pkg.sh "$artefacts" "$version" "installer/Patternspace-$version-macOS.pkg"
+              # signed when the installer identity is set, and then notarized and stapled
+              PKG_SIGN_IDENTITY="${MACOS_INSTALLER_IDENTITY:-}" \
+                packaging/macos/build-pkg.sh "$artefacts" "$version" "installer/Patternspace-$version-macOS.pkg"
               pkgutil --expand-full "installer/Patternspace-$version-macOS.pkg" "$RUNNER_TEMP/pkg"
-              find "$RUNNER_TEMP/pkg" -maxdepth 3 -name "Patternspace.*" ;;
+              find "$RUNNER_TEMP/pkg" -maxdepth 3 -name "Patternspace.*"
+              if [ -n "${MACOS_INSTALLER_IDENTITY:-}" ] && [ -n "${APPLE_ID:-}" ]; then
+                xcrun notarytool submit "installer/Patternspace-$version-macOS.pkg" \
+                  --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+                xcrun stapler staple "installer/Patternspace-$version-macOS.pkg"
+              fi ;;
             Windows)
               iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
               if [ ! -f "$iscc" ]; then
                 choco install innosetup --no-progress -y
               fi
+              sign=()
+              if [ -n "${SIGNTOOL:-}" ]; then
+                # Inno Setup signs the installer and uninstaller with this command
+                sign=("/SSigntool=$(cygpath -w "$SIGNTOOL") sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $SIGN_PFX /p $WINDOWS_CERTIFICATE_PASSWORD \$f" "/DSigned=1")
+              fi
               MSYS_NO_PATHCONV=1 "$iscc" /Q "/DAppVersion=$version" "/DArtefacts=$(cygpath -w "$PWD/$artefacts")" \
-                "/DOutputDir=$(cygpath -w "$PWD/installer")" packaging/windows/Patternspace.iss ;;
+                "/DOutputDir=$(cygpath -w "$PWD/installer")" ${sign[@]+"${sign[@]}"} packaging/windows/Patternspace.iss ;;
             Linux)
               packaging/linux/build-deb.sh "$artefacts" "$version" installer
               dpkg-deb --info installer/*.deb
@@ -180,7 +284,11 @@ jobs:
           path: release
           merge-multiple: true
 
+      # The release body is this version's section of CHANGELOG.md, with GitHub's generated
+      # list of merged pull requests after it.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --title "Patternspace ${GITHUB_REF_NAME#v}" --generate-notes
+        run: |
+          packaging/release-notes.sh "${GITHUB_REF_NAME#v}" > notes.md
+          gh release create "$GITHUB_REF_NAME" release/* --title "Patternspace ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes

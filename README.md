@@ -136,8 +136,11 @@ sudo apt install ninja-build libasound2-dev libjack-jackd2-dev ladspa-sdk libfre
 
 For a universal macOS build, add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 
-Every push builds all three platforms in GitHub Actions, runs the tests and pluginval, builds the
-installers, and uploads the plug-ins and installers as build artifacts. Plug-ins copied out of a
+Every push builds all three platforms in GitHub Actions, runs the engine tests and the headless
+window tests, validates the VST3 and the Audio Units with pluginval, the Audio Units with auval
+and the CLAP with clap-validator, builds the installers, and uploads the plug-ins and installers
+as build artifacts. Locally, `ctest` runs both test programs; the window tests need a display
+(`xvfb-run -a ctest ...` on a headless Linux box). Plug-ins copied out of a
 downloaded zip are quarantined on macOS until you run `xattr -dr com.apple.quarantine` on them;
 the .pkg avoids that. The installers are built by `packaging/macos/build-pkg.sh`,
 `packaging/windows/Patternspace.iss` (Inno Setup 6) and `packaging/linux/build-deb.sh`.
@@ -152,8 +155,9 @@ Downloads folder. On macOS and Windows that's the installer: **Install now** qui
 and opens it, and it updates the plug-ins too. On Linux it's the zip; replace the app with the one
 in its `Standalone` folder. The plug-ins don't check for updates themselves.
 
-To publish a release, bump `VERSION` in `project(Patternspace ...)` in `CMakeLists.txt`, merge it,
-then push a matching tag:
+To publish a release, bump `VERSION` in `project(Patternspace ...)` in `CMakeLists.txt`, turn the
+**Unreleased** section of `CHANGELOG.md` into a section for that version (it becomes the release
+notes), merge it, then push a matching tag:
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
@@ -163,6 +167,25 @@ The Build workflow builds all three platforms and publishes the release with
 `Patternspace-<version>-macOS.pkg`, `Patternspace-<version>-Windows-Setup.exe`,
 `patternspace_<version>_amd64.deb`, and a zip per platform. It stops if the tag and the
 version don't match, since the app compares its own version with the tag.
+
+### Signing the installers
+
+The builds are unsigned until the repository has certificates; then the workflow signs them on
+its own. Add these as repository secrets (**Settings > Secrets and variables > Actions**):
+
+- **macOS**: `MACOS_CERTIFICATE` (a Developer ID Application certificate with its key, exported
+  as .p12 and base64-encoded), `MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY` (its name,
+  like `Developer ID Application: Name (TEAMID)`), `MACOS_INSTALLER_IDENTITY` (a Developer ID
+  Installer identity, for the .pkg) and, for notarization, `APPLE_ID`, `APPLE_TEAM_ID` and
+  `APPLE_APP_PASSWORD` (an app-specific password). The app and plug-ins are signed with the
+  hardened runtime, the .pkg is signed, notarized and stapled, and the Gatekeeper step in
+  *Installing* above no longer applies.
+- **Windows**: `WINDOWS_CERTIFICATE` (a code-signing certificate as a base64-encoded .pfx) and
+  `WINDOWS_CERTIFICATE_PASSWORD`. The app, plug-ins, installer and uninstaller are signed with
+  SHA-256 and timestamped. An OV certificate still shows SmartScreen until it earns reputation;
+  an EV certificate or Azure Trusted Signing skips that.
+
+With no secrets set, nothing changes.
 
 ## Using it
 
@@ -217,10 +240,14 @@ version don't match, since the app compares its own version with the tag.
   prototype step for step on every factory patch.
 - `source/state`: patch files, in the prototype's JSON format, so patches move between the two.
   Files carry a format version (`"v": 2`); older files are upgraded as they load.
-- `source/plugin`: the JUCE processor, the patch canvas and the window.
+- `source/plugin`: the JUCE processor, the patch canvas (`PatchCanvas.cpp` for input and
+  editing, `PatchCanvasPaint.cpp` for drawing, `PatchCanvasMenus.cpp` for its menus,
+  `PatchCanvasItems.cpp` for the rows each module shows) and the window.
 - `presets`: factory patches and subsystems, embedded in the plug-in.
 - `tests`: engine tests, including a 128-step comparison against the prototype for every
-  factory patch (`tests/data/reference-steps.json`).
+  factory patch (`tests/data/reference-steps.json`), and headless window tests that load, paint
+  and edit every factory patch (`tests/UiTests.cpp`).
+- `CHANGELOG.md`: what changed in each version; the release notes come from it.
 - `docs/prototype/patchbay.html`: the browser prototype the plug-in is built from.
 - `packaging`: the macOS .pkg, Windows Setup.exe and Linux .deb builders.
 - `tools/export-prototype.cjs`: regenerates the presets and reference data from the prototype

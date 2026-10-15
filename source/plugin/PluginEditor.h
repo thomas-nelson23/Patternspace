@@ -24,6 +24,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    PatchCanvas& patchCanvas() { return canvas; } // for tests
+
 private:
     class Library;
     class TabStrip;

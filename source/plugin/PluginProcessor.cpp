@@ -610,6 +610,9 @@ void PatternspaceProcessor::commitPatch (const juce::String& undoGroup)
     next->setViewPath (viewPath);
     const int version = ++editVersion;
     {
+        // The audio thread waits on this lock only while the new engine copies the old one's
+        // positions: a few integers per module, so microseconds even for a large patch. The old
+        // engine is freed below, on this thread, never on the audio thread.
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (engine)
             next->adoptState (*engine);
@@ -771,10 +774,6 @@ void PatternspaceProcessor::setStateInformation (const void* data, int sizeInByt
     const auto patchText = xml->getStringAttribute ("patch");
     const auto patchName = xml->getStringAttribute ("patchName");
     setViewState (xml->getStringAttribute ("view"));
-    xml->removeAttribute ("patch");
-    xml->removeAttribute ("patchName");
-    xml->removeAttribute ("view");
-    params.replaceState (juce::ValueTree::fromXml (*xml));
     {
         const auto ccs = juce::StringArray::fromTokens (xml->getStringAttribute ("macroCcs"), ",", "");
         for (int i = 0; i < ps::Engine::numMacros; ++i)
@@ -783,17 +782,26 @@ void PatternspaceProcessor::setStateInformation (const void* data, int sizeInByt
         if (wrapperType == wrapperType_Standalone)
             setMidiOutput (xml->getStringAttribute ("midiOut"));
     }
+    // Only the parameters go into the parameter tree, so that saving again writes the same bytes.
+    for (const char* ours : { "patch", "patchName", "view", "macroCcs", "resetNote", "midiOut" })
+        xml->removeAttribute (ours);
+    params.replaceState (juce::ValueTree::fromXml (*xml));
 
     ps::Graph g;
-    if (patchText.isEmpty() || ! ps::json::fromString (patchText, g))
-        return;
-    if (juce::MessageManager::existsAndIsCurrentThread())
-        loadPatch (g, patchName, false);
-    else
-        juce::MessageManager::callAsync ([safe = juce::WeakReference<PatternspaceProcessor> (this), g, patchName] {
-            if (auto* self = safe.get())
-                self->loadPatch (g, patchName, false);
-        });
+    if (! patchText.isEmpty() && ps::json::fromString (patchText, g))
+    {
+        if (juce::MessageManager::existsAndIsCurrentThread())
+            loadPatch (g, patchName, false);
+        else
+            juce::MessageManager::callAsync ([safe = juce::WeakReference<PatternspaceProcessor> (this), g, patchName] {
+                if (auto* self = safe.get())
+                    self->loadPatch (g, patchName, false);
+            });
+    }
+
+    // Every parameter may have a new value now: tell the host to read them again, as it would after a
+    // program change. The CLAP wrapper turns this into a parameter rescan, which clap-validator requires.
+    updateHostDisplay (ChangeDetails().withProgramChanged (true));
 }
 
 juce::AudioProcessorEditor* PatternspaceProcessor::createEditor() { return new PatternspaceEditor (*this); }

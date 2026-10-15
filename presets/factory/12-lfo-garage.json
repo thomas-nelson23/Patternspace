@@ -1,0 +1,264 @@
+{
+  "name": "LFO Garage",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "k",
+        "k": "step",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "cells": [
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "e",
+        "k": "euclid",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {
+          "0": "SNARE"
+        },
+        "p": {
+          "hits": 3,
+          "len": 16,
+          "rot": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "lfo",
+        "k": "lfo",
+        "x": 14,
+        "y": 420,
+        "c": 0,
+        "tagIn": {
+          "0": "2BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "period": 8,
+          "depth": 100,
+          "ofs": 50,
+          "lo": 2,
+          "hi": 6,
+          "target": "e:hits",
+          "mode": "tri"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "h1",
+        "k": "euclid",
+        "x": 224,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 8,
+          "len": 16,
+          "rot": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "h2",
+        "k": "euclid",
+        "x": 224,
+        "y": 580,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 11,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sc",
+        "k": "scene",
+        "x": 434,
+        "y": 480,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "HATS"
+        },
+        "p": {
+          "ways": 2,
+          "scene": 1
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "walk",
+        "k": "walk",
+        "x": 14,
+        "y": 600,
+        "c": 0,
+        "tagIn": {
+          "0": "2BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "step": 40,
+          "rate": 8,
+          "lo": 1,
+          "hi": 2,
+          "target": "sc:scene"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "v",
+        "k": "vel",
+        "x": 644,
+        "y": 480,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "vel": 80,
+          "rnd": 30
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 900,
+        "y": 200,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "SNARE"
+        },
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Garage",
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Snare",
+              "note": 40
+            },
+            {
+              "name": "Hats",
+              "note": 44
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "h1",
+        "p": 0,
+        "b": "sc",
+        "q": 0
+      },
+      {
+        "a": "h2",
+        "p": 0,
+        "b": "sc",
+        "q": 1
+      },
+      {
+        "a": "sc",
+        "p": 0,
+        "b": "v",
+        "q": 0
+      },
+      {
+        "a": "v",
+        "p": 0,
+        "b": "m",
+        "q": 2
+      }
+    ],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "n0",
+        "text": "The LFO sweeps the snare's hit count between 2 and 6 over eight bars. A random walk flips the hat scene now and then.",
+        "x": 224,
+        "y": 760,
+        "w": 220,
+        "pg": "p1"
+      }
+    ],
+    "settings": {
+      "follow": 0,
+      "seed": 1234,
+      "rate": 0,
+      "swing": 62
+    }
+  }
+}

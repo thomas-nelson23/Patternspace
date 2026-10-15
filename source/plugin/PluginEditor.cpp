@@ -130,7 +130,7 @@ public:
         auto matches = [&query] (const juce::String& text) { return query.isEmpty() || text.containsIgnoreCase (query); };
         for (auto& section : ps::librarySections())
         {
-            if (noSound && section.title == "Sound")
+            if (noSound && juce::String (section.title) == "Sound")
                 continue; // the MIDI effect has no audio outputs
             rows.push_back ({ section.title, {}, {}, -1, true });
             for (auto& kind : section.kinds)
