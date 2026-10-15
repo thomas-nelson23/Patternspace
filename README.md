@@ -160,7 +160,7 @@ To publish a release, bump `VERSION` in `project(Patternspace ...)` in `CMakeLis
 notes), merge it, then push a matching tag:
 
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 The Build workflow builds all three platforms and publishes the release with

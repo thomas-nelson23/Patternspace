@@ -1,6 +1,6 @@
 ; Builds Patternspace-<version>-Windows-Setup.exe with Inno Setup 6:
 ;
-;   iscc /DAppVersion=0.2.0 /DArtefacts=build\Patternspace_artefacts\Release /DOutputDir=dist packaging\windows\Patternspace.iss
+;   iscc /DAppVersion=0.3.0 /DArtefacts=build\Patternspace_artefacts\Release /DOutputDir=dist packaging\windows\Patternspace.iss
 ;
 ; It installs the standalone app into Program Files and the VST3 and CLAP plug-ins into the
 ; standard Common Files folders, each a component the user can untick. The installer is unsigned

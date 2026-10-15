@@ -3,7 +3,7 @@
 Notable changes to Patternspace. The section for a version becomes its GitHub release notes
 when the tag is pushed (`packaging/release-notes.sh`).
 
-## Unreleased
+## 0.3.0 (2026-10-15)
 
 Everything from the October 2026 audit, in the order the pull requests landed.
 
