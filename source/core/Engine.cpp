@@ -16,6 +16,7 @@ StepOutput::StepOutput()
 {
     notes.reserve (512);
     hits.reserve (512);
+    controls.reserve (128);
 }
 
 namespace
@@ -24,6 +25,7 @@ namespace
     {
         clock, euclid, random, ca, grids, step, div, accent, prob, combine, sw,
         vel, shift, ratchet, fill, scene,
+        macro, lfo, walk, sh, cc, midiin,
         sample, audio, midi, sub, subin, subout, other
     };
 
@@ -35,13 +37,15 @@ namespace
             { "prob", K::prob }, { "combine", K::combine }, { "switch", K::sw }, { "sample", K::sample },
             { "audio", K::audio }, { "midi", K::midi }, { "sub", K::sub }, { "subin", K::subin },
             { "subout", K::subout }, { "vel", K::vel }, { "shift", K::shift }, { "ratchet", K::ratchet },
-            { "fill", K::fill }, { "scene", K::scene },
+            { "fill", K::fill }, { "scene", K::scene }, { "macro", K::macro }, { "lfo", K::lfo },
+            { "walk", K::walk }, { "sh", K::sh }, { "cc", K::cc }, { "midiin", K::midiin },
         };
         auto it = m.find (k);
         return it == m.end() ? K::other : it->second;
     }
 
     enum class Combine { orMode, andMode, xorMode, aMinusB };
+    enum class Shape { sine, tri, saw, square };
 
     struct Src
     {
@@ -74,6 +78,15 @@ namespace
         int scene = 1;                                         // Scene
         double noteLength = 0.5, nudge = 0;                    // MIDI out, in steps
         std::vector<int> laneChannels, laneChokes;
+        int hits = 4, len = 16, rot = 0, rseed = 90;           // Euclidean and Random, so a control can regenerate them
+        int macro = 0;                                         // Macro: which one
+        int period = 16, depth = 100, offset = 50;             // LFO
+        Shape shape = Shape::sine;
+        int walkStep = 10, walkRate = 1;                       // Random walk
+        int cc = 1;                                            // CC out
+        int tnode = -1;                                        // a control's target on this level, and its parameter and range
+        std::string tkey;
+        int lo = 0, hi = 0;
         Combine mode = Combine::orMode;
         int sample = 0, pitch = 0, decay = 6, bus = 1;
         std::vector<int> buses; // Audio outs a Sample player feeds
@@ -89,6 +102,8 @@ namespace
         int gpLoop = -1;
         std::array<int, 64> ring {}; // Shift: the last steps' inputs
         int ringAt = 0;
+        int ctl = 500, hold = 0, lastCc = -1, lastApplied = -1; // control state
+        std::int64_t phase0 = 0;                                // LFO: the step its cycle started on
 
         void reset()
         {
@@ -98,6 +113,11 @@ namespace
             gpLoop = -1;
             ring.fill (0);
             ringAt = 0;
+            ctl = 500;
+            hold = 0;
+            lastCc = -1;
+            lastApplied = -1;
+            phase0 = 0;
         }
     };
 
@@ -157,6 +177,14 @@ namespace
         for (size_t i = 0; i < n; ++i)
             for (auto& [q, s] : src[i])
                 deps[i].insert (s.node);
+        // A module steered by a control runs after it.
+        for (size_t i = 0; i < n; ++i)
+        {
+            std::string id, key;
+            if (isControlSource (g.nodes[i]) && parseTarget (g.nodes[i].target, id, key))
+                if (auto t = c.byId.find (id); t != c.byId.end() && t->second != (int) i)
+                    deps[(size_t) t->second].insert ((int) i);
+        }
         std::vector<bool> done (n, false);
         bool progress = true;
         while (c.order.size() < n && progress)
@@ -195,10 +223,52 @@ namespace
                     x.src[(size_t) q] = s;
             x.in.assign ((size_t) std::max (x.nIn, 1), 0);
 
+            if (isControlSource (m))
+            {
+                std::string id, key;
+                if (parseTarget (m.target, id, key))
+                    if (auto t = c.byId.find (id); t != c.byId.end() && t->second != (int) i)
+                    {
+                        x.tnode = t->second;
+                        x.tkey = key;
+                        x.lo = m.get ("lo");
+                        x.hi = m.get ("hi");
+                    }
+            }
             switch (x.k)
             {
-                case K::euclid: x.pat = euclid (m.get ("hits", 4), m.get ("len", 16), m.get ("rot")); break;
-                case K::random: x.pat = randomPattern (m.get ("len", 8), m.get ("density", 5), m.get ("seed", 90)); break;
+                case K::euclid:
+                    x.hits = m.get ("hits", 4);
+                    x.len = std::max (1, m.get ("len", 16));
+                    x.rot = m.get ("rot");
+                    x.pat = euclid (x.hits, x.len, x.rot);
+                    break;
+                case K::random:
+                    x.len = std::max (1, m.get ("len", 8));
+                    x.density = m.get ("density", 5);
+                    x.rseed = m.get ("seed", 90);
+                    x.pat = randomPattern (x.len, x.density, x.rseed);
+                    break;
+                case K::macro: x.macro = std::max (0, std::min (Engine::numMacros - 1, m.get ("macro", 1) - 1)); break;
+                case K::lfo:
+                    x.period = std::max (1, m.get ("period", 16));
+                    x.depth = std::max (0, std::min (100, m.get ("depth", 100)));
+                    x.offset = std::max (0, std::min (100, m.get ("ofs", 50)));
+                    x.shape = m.mode == "tri" ? Shape::tri : m.mode == "saw" ? Shape::saw : m.mode == "square" ? Shape::square : Shape::sine;
+                    break;
+                case K::walk:
+                    x.walkStep = std::max (1, std::min (50, m.get ("step", 10)));
+                    x.walkRate = std::max (1, m.get ("rate", 1));
+                    break;
+                case K::cc:
+                    x.cc = std::max (0, std::min (127, m.get ("cc", 1)));
+                    x.channel = std::max (1, std::min (16, m.get ("ch", 1)));
+                    break;
+                case K::midiin:
+                    x.channel = std::max (0, std::min (16, m.get ("ch", 0)));
+                    for (auto& l : m.lanes)
+                        x.notes.push_back (std::max (0, std::min (127, l.note)));
+                    break;
                 case K::step:
                     x.pat = m.cells;
                     if (x.pat.empty())
@@ -315,6 +385,11 @@ namespace
             x.loop = y.loop;
             x.cnt = y.cnt;
             x.sel = y.sel;
+            x.ctl = y.ctl;
+            x.hold = y.hold;
+            x.phase0 = y.phase0;
+            x.ring = y.ring;
+            x.ringAt = y.ringAt;
             if (x.inner && y.inner)
                 adopt (*x.inner, *y.inner);
         }
@@ -360,6 +435,69 @@ struct Engine::Impl
     StepOutput scratch;
     std::int64_t g = 0; // the step being evaluated
     std::uint32_t subDepth = 0; // nesting while evaluating, mixed into probability seeds
+    std::array<int, Engine::numMacros> macros {}; // 0 to 1000
+    struct NoteIn
+    {
+        int channel, note, velocity;
+    };
+    std::array<NoteIn, 64> notesIn {};
+    int numNotesIn = 0;
+
+    // A control's value, 0 to 1000, mapped onto its target's parameter range and applied when it
+    // changes. Patterns are rewritten in place, so nothing allocates here.
+    void applyTarget (CGraph& c, CNode& x)
+    {
+        if (x.tnode < 0 || x.tnode >= (int) c.nodes.size() || x.out.empty())
+            return;
+        const int value = x.lo + (int) std::lround ((x.hi - x.lo) * (std::max (0, std::min (1000, x.out[0])) / 1000.0));
+        if (value == x.lastApplied)
+            return;
+        x.lastApplied = value;
+        CNode& t = c.nodes[(size_t) x.tnode];
+        const std::string& k = x.tkey;
+        auto clampTo = [value] (int lo, int hi) { return std::max (lo, std::min (hi, value)); };
+        switch (t.k)
+        {
+            case K::euclid:
+                if (k == "hits") t.hits = clampTo (0, t.len);
+                else if (k == "rot") t.rot = clampTo (0, t.len - 1);
+                else return;
+                euclidInto (t.pat, t.hits, t.rot);
+                break;
+            case K::random:
+                if (k != "density") return;
+                t.density = clampTo (0, 10);
+                randomPatternInto (t.pat, t.density, t.rseed);
+                break;
+            case K::grids:
+                if (k == "mx") t.mx = clampTo (0, 100);
+                else if (k == "my") t.my = clampTo (0, 100);
+                else if (k == "dk") t.fills[0] = clampTo (0, 10);
+                else if (k == "ds") t.fills[1] = clampTo (0, 10);
+                else if (k == "dh") t.fills[2] = clampTo (0, 10);
+                else if (k == "chaos") t.chaos = clampTo (0, 10);
+                else return;
+                t.gpLoop = -1; // the pattern is rebuilt on the next step
+                break;
+            case K::div: t.div = clampTo (1, 16); break;
+            case K::accent:
+                if (k == "every") t.every = clampTo (1, 32);
+                else if (k == "lvl") t.accentLevel = clampTo (1, 127);
+                else if (k == "soft") t.softLevel = clampTo (1, 127);
+                break;
+            case K::prob: t.chance = clampTo (0, 10); break;
+            case K::vel: t.velocity = clampTo (1, 127); break;
+            case K::ratchet: t.repeats = clampTo (1, 8); break;
+            case K::shift: t.delay = clampTo (0, 63); break;
+            case K::fill: t.density = clampTo (0, 10); break;
+            case K::scene: t.scene = clampTo (1, t.ways); break;
+            case K::sample:
+                if (k == "pitch") t.pitch = clampTo (-12, 12);
+                else if (k == "decay") t.decay = clampTo (1, 10);
+                break;
+            default: break;
+        }
+    }
 
     void evalGraph (CGraph& c, const std::vector<int>* ext, StepOutput* out)
     {
@@ -570,6 +708,83 @@ struct Engine::Impl
                 x.sel = x.scene - 1;
                 break;
 
+            case K::macro:
+                x.out[0] = macros[(size_t) x.macro];
+                applyTarget (c, x);
+                break;
+
+            case K::lfo:
+            {
+                if (inv (0))
+                    x.phase0 = g;
+                const double p = nonNegMod (g - x.phase0, x.period) / (double) x.period;
+                double wave = 0;
+                switch (x.shape)
+                {
+                    case Shape::sine: wave = (1.0 - std::cos (p * 6.283185307179586)) / 2.0; break;
+                    case Shape::tri: wave = p < 0.5 ? p * 2.0 : 2.0 - p * 2.0; break;
+                    case Shape::saw: wave = p; break;
+                    case Shape::square: wave = p < 0.5 ? 1.0 : 0.0; break;
+                }
+                x.out[0] = std::max (0, std::min (1000, (int) std::lround ((x.offset + (wave - 0.5) * x.depth) * 10.0)));
+                applyTarget (c, x);
+                break;
+            }
+
+            case K::walk:
+            {
+                if (inv (0))
+                    x.ctl = 500;
+                else if (nonNegMod (g, x.walkRate) == 0)
+                {
+                    const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                    Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ 0x1B873593u);
+                    x.ctl = std::max (0, std::min (1000, x.ctl + (int) std::lround ((r.next() * 2.0 - 1.0) * x.walkStep * 10.0)));
+                }
+                x.out[0] = x.ctl;
+                applyTarget (c, x);
+                break;
+            }
+
+            case K::sh:
+            {
+                if (inv (0))
+                {
+                    const bool wired = x.src.size() > 1 && x.src[1].node >= 0;
+                    if (wired)
+                        x.hold = std::max (0, std::min (1000, inv (1)));
+                    else
+                    {
+                        const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                        Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ 0x6C078965u);
+                        x.hold = (int) (r.next() * 1000.0);
+                    }
+                }
+                x.out[0] = x.hold;
+                applyTarget (c, x);
+                break;
+            }
+
+            case K::cc:
+            {
+                const int v = std::max (0, std::min (127, (int) std::lround (inv (0) * 127.0 / 1000.0)));
+                if (v != x.lastCc && out && out->controls.size() < out->controls.capacity())
+                    out->controls.push_back ({ x.channel, x.cc, v });
+                x.lastCc = v;
+                break;
+            }
+
+            case K::midiin:
+                for (size_t q = 0; q < x.out.size() && q < x.notes.size(); ++q)
+                {
+                    int v = 0;
+                    for (int i = 0; i < numNotesIn; ++i)
+                        if (notesIn[(size_t) i].note == x.notes[q] && (x.channel == 0 || notesIn[(size_t) i].channel == x.channel))
+                            v = std::max (v, notesIn[(size_t) i].velocity);
+                    x.out[q] = v;
+                }
+                break;
+
             case K::prob:
             {
                 const int in = inv (0);
@@ -695,6 +910,7 @@ struct Engine::Impl
         g = index;
         evalGraph (root, nullptr, out);
         last = index;
+        numNotesIn = 0; // heard by this step
     }
 
     void updateView()
@@ -737,10 +953,33 @@ void Engine::load (const Graph& patch)
     impl->last = -1;
 }
 
+void Engine::setMacro (int index, float value)
+{
+    if (index >= 0 && index < numMacros)
+        impl->macros[(size_t) index] = std::max (0, std::min (1000, (int) std::lround (value * 1000.0f)));
+}
+
+void Engine::noteIn (int channel, int note, int velocity)
+{
+    if (impl->numNotesIn < (int) impl->notesIn.size())
+        impl->notesIn[(size_t) impl->numNotesIn++] = { channel, note, velocity };
+}
+
+int Engine::controlAt (const std::string& path) const
+{
+    const CNode* x = findPath (impl->root, path);
+    if (! x || x->out.empty())
+        return -1;
+    if (x->k == K::macro || x->k == K::lfo || x->k == K::walk || x->k == K::sh)
+        return x->out[0];
+    return -1;
+}
+
 void Engine::adoptState (const Engine& previous)
 {
     adopt (impl->root, previous.impl->root);
     impl->last = previous.impl->last;
+    impl->macros = previous.impl->macros;
     impl->random = previous.impl->random;
     impl->probability = previous.impl->probability;
     impl->stepsPerBar = previous.impl->stepsPerBar;
@@ -851,6 +1090,8 @@ std::string Engine::valuesAt (const std::string& path) const
         return join (x->in, x->notes.size());
     if (x->k == K::sample)
         return std::to_string (levelOf (x->trig));
+    if (x->k == K::macro || x->k == K::lfo || x->k == K::walk || x->k == K::sh)
+        return std::to_string (x->out.empty() ? 0 : x->out[0]);
     if (x->k == K::subout || x->k == K::audio || x->k == K::other)
         return {};
     return join (x->out, x->out.size());

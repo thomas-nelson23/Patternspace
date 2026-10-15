@@ -30,7 +30,7 @@ namespace
     {
         juce::Array<var> a;
         for (auto t : v)
-            a.add (t == PortType::audio ? "audio" : "gate");
+            a.add (t == PortType::audio ? "audio" : t == PortType::control ? "control" : "gate");
         return a;
     }
     var tags (const std::map<int, std::string>& m)
@@ -68,6 +68,7 @@ namespace
             put (p, k.c_str(), v);
         if (! n.mode.empty()) put (p, "mode", str (n.mode));
         if (! n.sample.empty()) put (p, "sample", str (n.sample));
+        if (! n.target.empty()) put (p, "target", str (n.target));
         if (n.kind == "step")
         {
             juce::Array<var> cells;
@@ -75,7 +76,7 @@ namespace
                 cells.add (c);
             put (p, "cells", cells);
         }
-        if (n.kind == "midi")
+        if (n.kind == "midi" || n.kind == "midiin")
         {
             put (p, "name", str (n.name));
             juce::Array<var> lanes;
@@ -199,7 +200,7 @@ namespace
         std::vector<PortType> r;
         if (auto* a = v.getArray())
             for (auto& s : *a)
-                r.push_back (s.toString() == "audio" ? PortType::audio : PortType::gate);
+                r.push_back (s.toString() == "audio" ? PortType::audio : s.toString() == "control" ? PortType::control : PortType::gate);
         return r;
     }
     std::map<int, std::string> readTags (const var& v)
@@ -252,6 +253,7 @@ namespace
                 const var& value = prop.value;
                 if (key == "mode") n.mode = std8 (value);
                 else if (key == "sample") n.sample = std8 (value);
+                else if (key == "target") n.target = std8 (value);
                 else if (key == "name") n.name = std8 (value);
                 else if (key == "note") legacyNote = std8 (value); // MIDI outs before they had several outputs
                 else if (key == "cells")
@@ -277,7 +279,7 @@ namespace
             if (v["g"].isObject() && ! readGraph (v["g"], n.inner.front(), false))
                 return false;
         }
-        if (n.kind == "midi" && n.lanes.empty())
+        if ((n.kind == "midi" || n.kind == "midiin") && n.lanes.empty())
             n.lanes.push_back ({ n.name.empty() ? "Note" : n.name, noteNumber (legacyNote) });
         return true;
     }

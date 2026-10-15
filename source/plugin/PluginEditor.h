@@ -49,6 +49,7 @@ private:
     void exportSubsystemToFile (const ps::Node&); // anywhere, for sharing
     std::function<void()> pendingAfterSave;
     void showUpdatesMenu();
+    void showMidiMenu(); // the standalone app's MIDI output device
     void refreshUpdateButton();
     void refreshTransport(); // dims the internal clock's controls while the host drives it
     void saveViewState();
@@ -78,6 +79,8 @@ private:
     // Standalone only: plug-ins are updated by reinstalling them, not from inside a host.
     std::unique_ptr<Updater> updater;
     juce::TextButton updatesButton { "Updates" };
+    juce::TextButton midiButton { "MIDI" }; // standalone only: the output device, lit while notes go out
+    int midiSeen = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatternspaceEditor)
 };

@@ -89,6 +89,29 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         NEEDS_CURL TRUE
         COPY_PLUGIN_AFTER_BUILD ${PATTERNSPACE_COPY_PLUGINS})
 
+    # Logic only takes MIDI from AU MIDI-effect units, so macOS also builds "Patternspace MIDI":
+    # the same plug-in as a MIDI processor with no audio outputs.
+    if(APPLE)
+        juce_add_plugin(PatternspaceMidiFX
+            PRODUCT_NAME "Patternspace MIDI"
+            COMPANY_NAME "Patternspace"
+            BUNDLE_ID "com.patternspace.patternspace-midi"
+            PLUGIN_MANUFACTURER_CODE Pspc
+            PLUGIN_CODE Psq2
+            FORMATS AU
+            IS_SYNTH FALSE
+            NEEDS_MIDI_INPUT TRUE
+            NEEDS_MIDI_OUTPUT TRUE
+            IS_MIDI_EFFECT TRUE
+            EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+            AU_MAIN_TYPE kAudioUnitType_MIDIProcessor
+            NEEDS_CURL TRUE
+            COPY_PLUGIN_AFTER_BUILD ${PATTERNSPACE_COPY_PLUGINS})
+        set(PATTERNSPACE_PLUGIN_TARGETS Patternspace PatternspaceMidiFX)
+    else()
+        set(PATTERNSPACE_PLUGIN_TARGETS Patternspace)
+    endif()
+
     juce_add_binary_data(PatternspacePresets
         HEADER_NAME PatternspacePresets.h
         NAMESPACE PatternspacePresets
@@ -107,47 +130,53 @@ if(PATTERNSPACE_BUILD_PLUGIN)
             resources/fonts/JetBrainsMono-Medium.ttf
             resources/fonts/Michroma-Regular.ttf)
 
-    target_sources(Patternspace PRIVATE
-        source/plugin/PatchCanvas.cpp
-        source/plugin/PatchCanvas.h
-        source/plugin/PluginEditor.cpp
-        source/plugin/PluginEditor.h
-        source/plugin/PluginProcessor.cpp
-        source/plugin/PluginProcessor.h
-        source/plugin/Presets.cpp
-        source/plugin/Presets.h
-        source/plugin/Theme.cpp
-        source/plugin/Theme.h
-        source/plugin/Updater.cpp
-        source/plugin/Updater.h
-        source/plugin/UserLibrary.cpp
-        source/plugin/UserLibrary.h
-        source/state/PatchJson.cpp
-        source/state/PatchJson.h
-        source/update/UpdateCheck.cpp
-        source/update/UpdateCheck.h)
-
     # The standalone app's update check reads GitHub releases over HTTPS, which needs curl on Linux.
     set(PATTERNSPACE_UPDATE_REPO "thomas-nelson23/Patternspace" CACHE STRING "GitHub owner/repo the standalone app checks for releases")
 
-    target_compile_definitions(Patternspace PUBLIC
-        PATTERNSPACE_UPDATE_REPO="${PATTERNSPACE_UPDATE_REPO}"
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=1
-        JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0)
+    foreach(target IN LISTS PATTERNSPACE_PLUGIN_TARGETS)
+        target_sources(${target} PRIVATE
+            source/plugin/PatchCanvas.cpp
+            source/plugin/PatchCanvas.h
+            source/plugin/PluginEditor.cpp
+            source/plugin/PluginEditor.h
+            source/plugin/PluginProcessor.cpp
+            source/plugin/PluginProcessor.h
+            source/plugin/Presets.cpp
+            source/plugin/Presets.h
+            source/plugin/Theme.cpp
+            source/plugin/Theme.h
+            source/plugin/Updater.cpp
+            source/plugin/Updater.h
+            source/plugin/UserLibrary.cpp
+            source/plugin/UserLibrary.h
+            source/state/PatchJson.cpp
+            source/state/PatchJson.h
+            source/update/UpdateCheck.cpp
+            source/update/UpdateCheck.h)
 
-    target_link_libraries(Patternspace
-        PRIVATE
-            patternspace_core
-            PatternspacePresets
-            PatternspaceFonts
-            juce::juce_audio_utils
-            juce::juce_gui_basics
-        PUBLIC
-            juce::juce_recommended_config_flags
-            juce::juce_recommended_lto_flags
-            juce::juce_recommended_warning_flags)
+        target_compile_definitions(${target} PUBLIC
+            PATTERNSPACE_UPDATE_REPO="${PATTERNSPACE_UPDATE_REPO}"
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=1
+            JUCE_VST3_CAN_REPLACE_VST2=0
+            JUCE_DISPLAY_SPLASH_SCREEN=0)
+
+        target_link_libraries(${target}
+            PRIVATE
+                patternspace_core
+                PatternspacePresets
+                PatternspaceFonts
+                juce::juce_audio_utils
+                juce::juce_gui_basics
+            PUBLIC
+                juce::juce_recommended_config_flags
+                juce::juce_recommended_lto_flags
+                juce::juce_recommended_warning_flags)
+    endforeach()
+    target_compile_definitions(Patternspace PUBLIC PATTERNSPACE_MIDI_EFFECT=0)
+    if(APPLE)
+        target_compile_definitions(PatternspaceMidiFX PUBLIC PATTERNSPACE_MIDI_EFFECT=1)
+    endif()
 
     if(PATTERNSPACE_BUILD_CLAP)
         clap_juce_extensions_plugin(TARGET Patternspace

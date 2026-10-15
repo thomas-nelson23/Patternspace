@@ -89,6 +89,10 @@ jobs:
           for format in ${{ matrix.formats }}; do
             cp -R "build/Patternspace_artefacts/Release/$format" "dist/$format"
           done
+          # macOS also builds the AU MIDI effect for Logic, beside the instrument
+          if [ -d "build/PatternspaceMidiFX_artefacts/Release/AU" ]; then
+            cp -R "build/PatternspaceMidiFX_artefacts/Release/AU/." "dist/AU/"
+          fi
           find dist -name "*.a" -o -name "*.lib" -o -name "*.exp" | xargs rm -f
 
       - uses: actions/upload-artifact@v4

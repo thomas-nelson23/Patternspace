@@ -52,14 +52,22 @@ struct StepOutput
         int repeats = 1;
         double offset = 0; // in steps
     };
+    struct Control
+    {
+        int channel; // 1-16
+        int cc;
+        int value; // 0-127
+    };
     std::vector<NoteOn> notes;
     std::vector<Hit> hits;
+    std::vector<Control> controls;
 
     StepOutput();
     void clear()
     {
         notes.clear();
         hits.clear();
+        controls.clear();
     }
 };
 
@@ -111,6 +119,15 @@ public:
     };
     void setProbabilityMode (ProbabilityMode mode);
     void setRandomSeed (std::uint32_t seed); // seeds both modes
+
+    // The 16 Macro parameters, 0 to 1, read by Macro modules. Safe on the audio thread.
+    static constexpr int numMacros = 16;
+    void setMacro (int index, float value);
+    // A note that arrived at the MIDI input since the last step; MIDI in modules fire on it. Up
+    // to 64 are kept per step. Safe on the audio thread.
+    void noteIn (int channel, int note, int velocity);
+    // A control module's value, 0 to 1000, for drawing; -1 when the path isn't a control module.
+    int controlAt (const std::string& path) const;
 
     // What each module of the graph being shown is doing after the last step, in patch order, for
     // drawing. That graph is the root patch unless setViewPath() has opened a subsystem.

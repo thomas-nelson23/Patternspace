@@ -57,6 +57,13 @@ struct ParamSpec
 };
 std::vector<ParamSpec> paramsOf (const Node& node);
 
+// Control: Macro, LFO, Random walk and Sample & hold put out a value from 0 to 1 each step and
+// can steer one parameter of another module on the same level (node.target is "id:key", with
+// num["lo"] and num["hi"] the range it sweeps). modulatableParams() lists what can be steered.
+bool isControlSource (const Node& node);
+std::vector<ParamSpec> modulatableParams (const Node& node);
+bool parseTarget (const std::string& target, std::string& id, std::string& key);
+
 // Steps a whole-number parameter, clamped to its range (some ranges depend on other parameters,
 // such as Euclidean hits never exceeding steps). Returns false when nothing changed.
 bool stepParam (Graph& graph, Node& node, const std::string& key, int delta);

@@ -51,7 +51,7 @@ class PatternspaceEditor::Library : public juce::Component
     };
 
 public:
-    Library (PatchCanvas& c, std::function<void()> importFromFile) : canvas (c), onImport (std::move (importFromFile))
+    Library (PatchCanvas& c, bool midiEffect, std::function<void()> importFromFile) : canvas (c), noSound (midiEffect), onImport (std::move (importFromFile))
     {
         search.setFont (ps::theme::sans (12.5f));
         search.setColour (juce::TextEditor::backgroundColourId, ps::theme::ink);
@@ -130,6 +130,8 @@ public:
         auto matches = [&query] (const juce::String& text) { return query.isEmpty() || text.containsIgnoreCase (query); };
         for (auto& section : ps::librarySections())
         {
+            if (noSound && section.title == "Sound")
+                continue; // the MIDI effect has no audio outputs
             rows.push_back ({ section.title, {}, {}, -1, true });
             for (auto& kind : section.kinds)
                 if (auto* info = ps::kindInfo (kind))
@@ -306,6 +308,7 @@ private:
     };
 
     PatchCanvas& canvas;
+    bool noSound = false;
     std::function<void()> onImport;
     std::vector<Row> rows;
     juce::TextEditor search;
@@ -559,7 +562,7 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
 {
     setLookAndFeel (&look);
 
-    library = std::make_unique<Library> (canvas, [this] { importSubsystem(); });
+    library = std::make_unique<Library> (canvas, processor.isMidiEffect(), [this] { importSubsystem(); });
     tabs = std::make_unique<TabStrip> (p, canvas);
     addAndMakeVisible (canvas);
     addAndMakeVisible (*library);
@@ -637,6 +640,9 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
         updatesButton.onClick = [this] { showUpdatesMenu(); };
         addAndMakeVisible (updatesButton);
         refreshUpdateButton();
+        midiButton.setTooltip ("The MIDI device the app's MIDI outs play to, with MIDI clock and start/stop. The input device is under Options.");
+        midiButton.onClick = [this] { showMidiMenu(); };
+        addAndMakeVisible (midiButton);
         juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<PatternspaceEditor> (this)] {
             if (safe != nullptr)
                 safe->updater->checkIfDue();
@@ -712,6 +718,11 @@ void PatternspaceEditor::resized()
     saveButton.setBounds (top.removeFromLeft (76));
     top.removeFromLeft (6);
     updatesButton.setBounds (top.removeFromLeft (updater != nullptr && updater->updateAvailable() ? 150 : 86));
+    if (midiButton.isVisible())
+    {
+        top.removeFromLeft (6);
+        midiButton.setBounds (top.removeFromLeft (76));
+    }
 
     if (syncButton.isVisible())
     {
@@ -786,7 +797,42 @@ void PatternspaceEditor::showPatchMenu()
     menu.addItem ("Save as...", [this] { savePatchAs(); });
     menu.addSeparator();
     menu.addItem ("Rename patch...", [this] { renamePatch(); });
+    // What the MIDI input does, kept with the plug-in instance rather than the patch.
+    juce::PopupMenu midiIn;
+    const int rst = processor.resetNote();
+    midiIn.addItem (processor.isLearningReset() ? juce::String ("Play the note that resets...")
+                                                : rst >= 0 ? "Reset on " + u8 (ps::noteName (rst)) + "  (learn another)" : juce::String ("Reset on a note (learn)"),
+                    [this] { processor.learnResetNote(); });
+    midiIn.addItem ("No reset note", rst >= 0, false, [this] { processor.setResetNote (-1); });
+    midiIn.addSeparator();
+    const bool thru = processor.params.getRawParameterValue ("thru")->load() > 0.5f;
+    midiIn.addItem ("MIDI thru", true, thru, [this, thru] {
+        if (auto* p = processor.params.getParameter ("thru"))
+            p->setValueNotifyingHost (thru ? 0.0f : 1.0f);
+    });
+    midiIn.addSeparator();
+    midiIn.addItem ("Macros follow MIDI CCs: click Learn on a Macro module", false, false, nullptr);
+    menu.addSubMenu ("MIDI input", midiIn);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&patchButton).withMinimumWidth (220));
+}
+
+void PatternspaceEditor::showMidiMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("MIDI output");
+    const auto current = processor.midiOutputId();
+    menu.addItem ("None", true, current.isEmpty(), [this] {
+        processor.setMidiOutput ({});
+        refreshTransport();
+    });
+    for (auto& d : juce::MidiOutput::getAvailableDevices())
+        menu.addItem (d.name, true, d.identifier == current, [this, id = d.identifier] {
+            processor.setMidiOutput (id);
+            refreshTransport();
+        });
+    menu.addSeparator();
+    menu.addItem ("Sends the MIDI outs' notes, MIDI clock and start/stop", false, false, nullptr);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&midiButton));
 }
 
 void PatternspaceEditor::confirmDiscard (const juce::String& action, std::function<void()> go)
@@ -914,6 +960,17 @@ void PatternspaceEditor::refreshTransport()
         tempoSlider.setTooltip (tip);
         playButton.setTooltip (host ? "The host's transport drives the clock while Host sync is on"
                                     : "Runs the internal clock when the host isn't driving it (and always in the standalone app)");
+    }
+    if (midiButton.isVisible())
+    {
+        // A dot lights while notes are going out to the chosen device.
+        const int sent = processor.midiSentCount();
+        const bool device = processor.midiOutputId().isNotEmpty();
+        const bool active = device && sent != midiSeen;
+        midiSeen = sent;
+        const auto label = juce::String (active ? "\xE2\x97\x8F MIDI" : device ? "MIDI" : "MIDI off");
+        if (midiButton.getButtonText() != label)
+            midiButton.setButtonText (label);
     }
 }
 

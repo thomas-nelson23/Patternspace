@@ -4,6 +4,7 @@
 #include "../core/Patch.h"
 #include "../core/Sampler.h"
 
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <array>
@@ -32,7 +33,9 @@ public:
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
-    bool isMidiEffect() const override { return false; }
+    // The macOS build also makes an AU MIDI effect ("Patternspace MIDI"), the only kind of unit
+    // Logic takes MIDI from. It has no audio outputs; everything else is the same.
+    bool isMidiEffect() const override { return PATTERNSPACE_MIDI_EFFECT != 0; }
     double getTailLengthSeconds() const override { return 0.7; }
 
     // The factory patches, so hosts can list and switch them as programs.
@@ -100,6 +103,23 @@ public:
         auditionNote = note;
     }
 
+    // ---- MIDI input: the 16 Macro parameters can follow a controller, a note can reset the
+    // generators, and the input can pass straight through to the output. Mappings live in the
+    // plug-in state, not the patch, since they belong to the setup, not the music.
+    int macroCc (int macro) const { return macroCcs[(size_t) macro].load(); } // -1 for none
+    void setMacroCc (int macro, int cc) { macroCcs[(size_t) macro] = cc; }
+    void learnMacroCc (int macro) { learningMacro = macro; } // the next controller received maps to it
+    bool isLearningMacro (int macro) const { return learningMacro.load() == macro; }
+    int resetNote() const { return resetNoteNumber.load(); } // -1 for none
+    void setResetNote (int note) { resetNoteNumber = note; }
+    void learnResetNote() { learningReset = true; }
+    bool isLearningReset() const { return learningReset.load(); }
+
+    // ---- the standalone app's own MIDI output, with MIDI clock and start/stop
+    juce::String midiOutputId() const;
+    void setMidiOutput (const juce::String& identifier); // empty for none
+    int midiSentCount() const { return midiSent.load(); }  // grows with every note sent, for an activity light
+
     juce::AudioProcessorValueTreeState params;
 
 private:
@@ -165,6 +185,18 @@ private:
     std::atomic<float>* bpmParam = nullptr;
     std::atomic<float>* runParam = nullptr;
     std::atomic<float>* syncParam = nullptr;
+    std::atomic<float>* thruParam = nullptr;
+    std::array<std::atomic<float>*, ps::Engine::numMacros> macroParams {};
+    std::array<std::atomic<int>, ps::Engine::numMacros> macroCcs;
+    std::atomic<int> learningMacro { -1 };
+    std::atomic<int> resetNoteNumber { -1 };
+    std::atomic<bool> learningReset { false };
+    juce::MidiBuffer thruBuffer, deviceBuffer;
+    std::atomic<int> midiSent { 0 };
+    mutable juce::SpinLock midiOutLock;
+    std::unique_ptr<juce::MidiOutput> midiOut;
+    juce::String midiOutIdentifier;
+    double devicePpq = 0; // where the MIDI clock out last ticked
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (PatternspaceProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatternspaceProcessor)

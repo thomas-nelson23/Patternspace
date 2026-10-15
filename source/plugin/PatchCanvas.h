@@ -111,7 +111,9 @@ private:
         addPort,
         reroll,
         paramValue, // the value itself: drag up and down, scroll, or double-click to type
-        lane        // a MIDI out's output name: opens its menu
+        lane,       // a MIDI out's output name: opens its menu
+        learn,      // a Macro's MIDI CC: the next controller moved maps to it
+        target      // a control module's target: opens the menu of parameters it can steer
     };
     struct Zone
     {
@@ -215,6 +217,7 @@ private:
     void goToNode (const std::string& id); // select it and bring it into view, switching tabs if needed
     void showBlockMenu (int block);
     void showLaneMenu (int node, int lane);
+    void showTargetMenu (int node);
     void showNoteMenu (int note);
     void editBlockTitle (int block);
     void editNote (int note);

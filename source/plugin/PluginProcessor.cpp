@@ -10,7 +10,9 @@
 juce::AudioProcessor::BusesProperties PatternspaceProcessor::makeBuses()
 {
     // Out 1 is the main stereo output. Outs 2-8 are optional: any a host leaves switched off
-    // (and all of them in the standalone app) are mixed into Out 1.
+    // (and all of them in the standalone app) are mixed into Out 1. The MIDI effect has none.
+    if (PATTERNSPACE_MIDI_EFFECT)
+        return BusesProperties();
     auto buses = BusesProperties().withOutput ("Out 1", juce::AudioChannelSet::stereo(), true);
     for (int i = 2; i <= ps::Sampler::numBuses; ++i)
         buses = buses.withOutput ("Out " + juce::String (i), juce::AudioChannelSet::stereo(), false);
@@ -27,6 +29,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout makeParameters()
                                                              juce::AudioParameterFloatAttributes().withLabel ("BPM")));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "run", 1 }, "Play", true));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sync", 1 }, "Host sync", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "thru", 1 }, "MIDI thru", false));
+    for (int i = 1; i <= ps::Engine::numMacros; ++i)
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "m" + juce::String (i), 1 }, "Macro " + juce::String (i),
+                                                                 juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f));
     return layout;
 }
 } // namespace
@@ -38,6 +44,14 @@ PatternspaceProcessor::PatternspaceProcessor()
     bpmParam = params.getRawParameterValue ("bpm");
     runParam = params.getRawParameterValue ("run");
     syncParam = params.getRawParameterValue ("sync");
+    thruParam = params.getRawParameterValue ("thru");
+    for (int i = 0; i < ps::Engine::numMacros; ++i)
+    {
+        macroParams[(size_t) i] = params.getRawParameterValue ("m" + juce::String (i + 1));
+        macroCcs[(size_t) i] = -1;
+    }
+    thruBuffer.ensureSize (4096);
+    deviceBuffer.ensureSize (8192);
 
     const auto& factory = ps::presets::factory();
     if (! factory.empty())
@@ -51,7 +65,10 @@ PatternspaceProcessor::PatternspaceProcessor()
     }
 }
 
-PatternspaceProcessor::~PatternspaceProcessor() = default;
+PatternspaceProcessor::~PatternspaceProcessor()
+{
+    setMidiOutput ({}); // stops the device thread
+}
 
 void PatternspaceProcessor::prepareToPlay (double sampleRate, int)
 {
@@ -65,6 +82,8 @@ void PatternspaceProcessor::releaseResources() { sampler.stopAll(); }
 
 bool PatternspaceProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
+    if (PATTERNSPACE_MIDI_EFFECT)
+        return layouts.inputBuses.isEmpty() && layouts.outputBuses.isEmpty();
     if (! layouts.inputBuses.isEmpty() && ! layouts.getMainInputChannelSet().isDisabled())
         return false;
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
@@ -148,6 +167,33 @@ void PatternspaceProcessor::flushPendingOns (juce::MidiBuffer& midi, int n)
     }
 }
 
+juce::String PatternspaceProcessor::midiOutputId() const
+{
+    const juce::SpinLock::ScopedLockType lock (midiOutLock);
+    return midiOutIdentifier;
+}
+
+void PatternspaceProcessor::setMidiOutput (const juce::String& identifier)
+{
+    std::unique_ptr<juce::MidiOutput> opened;
+    if (identifier.isNotEmpty())
+    {
+        opened = juce::MidiOutput::openDevice (identifier);
+        if (opened != nullptr)
+            opened->startBackgroundThread();
+    }
+    std::unique_ptr<juce::MidiOutput> old;
+    {
+        const juce::SpinLock::ScopedLockType lock (midiOutLock);
+        old = std::move (midiOut);
+        midiOut = std::move (opened);
+        midiOutIdentifier = midiOut != nullptr ? identifier : juce::String();
+        devicePpq = -1;
+    }
+    if (old != nullptr)
+        old->stopBackgroundThread();
+}
+
 void PatternspaceProcessor::readSettings()
 {
     auto setting = [this] (const char* key, int fallback) {
@@ -163,6 +209,40 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
     buffer.clear();
+
+    // What came in: notes for MIDI in modules and the reset note, controllers for the macros.
+    struct Arrived
+    {
+        int channel, note, velocity;
+    };
+    std::array<Arrived, 64> arrived {};
+    int numArrived = 0;
+    const bool thru = thruParam->load() > 0.5f;
+    thruBuffer.clear();
+    for (const auto meta : midi)
+    {
+        const auto m = meta.getMessage();
+        if (thru)
+            thruBuffer.addEvent (m, meta.samplePosition);
+        if (m.isNoteOn())
+        {
+            if (learningReset.exchange (false))
+                resetNoteNumber = m.getNoteNumber();
+            if (m.getNoteNumber() == resetNoteNumber.load())
+                resetRequested = true;
+            else if (numArrived < (int) arrived.size())
+                arrived[(size_t) numArrived++] = { m.getChannel(), m.getNoteNumber(), m.getVelocity() };
+        }
+        else if (m.isController())
+        {
+            if (const int learn = learningMacro.exchange (-1); learn >= 0 && learn < ps::Engine::numMacros)
+                macroCcs[(size_t) learn] = m.getControllerNumber();
+            for (int i = 0; i < ps::Engine::numMacros; ++i)
+                if (macroCcs[(size_t) i].load() == m.getControllerNumber())
+                    if (auto* p = params.getParameter ("m" + juce::String (i + 1)))
+                        p->setValueNotifyingHost (m.getControllerValue() / 127.0f);
+        }
+    }
     midi.clear();
     sendNoteOffs (midi, n);
     flushPendingOns (midi, n);
@@ -229,6 +309,10 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (engine)
         {
             engine->setMeter (std::max (1, stepsPerBar * sub / stride), barStartStep * sub / stride);
+            for (int i = 0; i < ps::Engine::numMacros; ++i)
+                engine->setMacro (i, macroParams[(size_t) i]->load());
+            for (int i = 0; i < numArrived; ++i)
+                engine->noteIn (arrived[(size_t) i].channel, arrived[(size_t) i].note, arrived[(size_t) i].velocity);
             for (auto k = (std::int64_t) std::ceil (start - 1.0e-7); (double) k < end - 1.0e-7; ++k)
             {
                 if (stride == 2 && ((k % 2) + 2) % 2 != 0)
@@ -262,6 +346,8 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                         for (int r = 0; r < repeats; ++r)
                             sampler.trigger (hit, std::max (0, (int) std::lround (at + (hit.offset + (double) r / repeats) * stepLen)));
                     }
+                    for (auto& ctl : stepOut.controls)
+                        midi.addEvent (juce::MidiMessage::controllerEvent (ctl.channel, ctl.cc, ctl.value), juce::jlimit (0, n - 1, (int) std::lround (at)));
                 }
             }
         }
@@ -270,6 +356,39 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     running = playing;
     followingHost = hostKnown;
     tempo = bpm;
+    if (thru)
+        midi.addEvents (thruBuffer, 0, n, 0);
+    if (! midi.isEmpty())
+        midiSent.fetch_add (midi.getNumEvents());
+
+    // The standalone app's own MIDI output: what the MIDI outs made, plus MIDI clock while
+    // playing, with start and stop as the transport changes.
+    if (wrapperType == wrapperType_Standalone)
+    {
+        const juce::SpinLock::ScopedTryLockType tryLock (midiOutLock);
+        if (tryLock.isLocked() && midiOut != nullptr)
+        {
+            deviceBuffer.clear();
+            deviceBuffer.addEvents (midi, 0, n, 0);
+            const bool startedNow = playing && devicePpq < 0;
+            if (startedNow)
+                deviceBuffer.addEvent (juce::MidiMessage::midiStart(), 0);
+            if (! playing && devicePpq >= 0)
+                deviceBuffer.addEvent (juce::MidiMessage::midiStop(), 0);
+            if (playing)
+            {
+                // 24 ticks a beat, from the position of this block
+                const double from = ppq, to = ppq + n / samplesPerBeat;
+                for (auto t = (std::int64_t) std::ceil (from * 24.0 - 1.0e-7); t / 24.0 < to - 1.0e-7; ++t)
+                    deviceBuffer.addEvent (juce::MidiMessage::midiClock(), juce::jlimit (0, n - 1, (int) std::lround ((t / 24.0 - from) * samplesPerBeat)));
+                devicePpq = to;
+            }
+            else
+                devicePpq = -1;
+            if (! deviceBuffer.isEmpty())
+                midiOut->sendBlockOfMessages (deviceBuffer, juce::Time::getMillisecondCounterHiRes(), sr);
+        }
+    }
 
     // Each audio out renders into its own stereo bus when the host has it switched on.
     const bool standalone = wrapperType == wrapperType_Standalone;
@@ -507,6 +626,12 @@ void PatternspaceProcessor::getStateInformation (juce::MemoryBlock& destData)
         const juce::ScopedLock sl (stateLock);
         xml->setAttribute ("view", viewState);
     }
+    juce::StringArray ccs;
+    for (int i = 0; i < ps::Engine::numMacros; ++i)
+        ccs.add (juce::String (macroCcs[(size_t) i].load()));
+    xml->setAttribute ("macroCcs", ccs.joinIntoString (","));
+    xml->setAttribute ("resetNote", resetNoteNumber.load());
+    xml->setAttribute ("midiOut", midiOutputId());
     copyXmlToBinary (*xml, destData);
 }
 
@@ -522,6 +647,14 @@ void PatternspaceProcessor::setStateInformation (const void* data, int sizeInByt
     xml->removeAttribute ("patchName");
     xml->removeAttribute ("view");
     params.replaceState (juce::ValueTree::fromXml (*xml));
+    {
+        const auto ccs = juce::StringArray::fromTokens (xml->getStringAttribute ("macroCcs"), ",", "");
+        for (int i = 0; i < ps::Engine::numMacros; ++i)
+            macroCcs[(size_t) i] = i < ccs.size() ? juce::jlimit (-1, 127, ccs[i].getIntValue()) : -1;
+        resetNoteNumber = juce::jlimit (-1, 127, xml->getIntAttribute ("resetNote", -1));
+        if (wrapperType == wrapperType_Standalone)
+            setMidiOutput (xml->getStringAttribute ("midiOut"));
+    }
 
     ps::Graph g;
     if (patchText.isEmpty() || ! ps::json::fromString (patchText, g))
