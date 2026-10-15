@@ -28,6 +28,7 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseMagnify (const juce::MouseEvent&, float scaleFactor) override;
     bool keyPressed (const juce::KeyPress&) override;
@@ -158,6 +159,8 @@ private:
     void paintNode (juce::Graphics&, int index, const ps::Node&, const Layout&);
     void paintBody (juce::Graphics&, int index, const ps::Node&, const Layout&);
     void paintCells (juce::Graphics&, juce::Rectangle<float>, const std::vector<int>& cells, int now, juce::Colour, bool editable = false);
+    static void paintSegment (juce::Graphics&, juce::Rectangle<float>, bool on, juce::Colour);
+    void renderBackdrop();
 
     void applyZone (int node, const Zone&, juce::Point<float> world);
     void connect (int fromNode, int fromPort, int toNode, int toPort);
@@ -214,6 +217,8 @@ private:
 
     juce::String message;
     juce::uint32 messageUntil = 0;
+
+    juce::Image backdrop; // the faint colour fields behind the workspace, redrawn when it resizes
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatchCanvas)
 };

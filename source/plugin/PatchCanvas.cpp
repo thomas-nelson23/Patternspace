@@ -286,7 +286,7 @@ void PatchCanvas::closeSubsystem (size_t depth)
     if (depth >= subPath.size())
         return;
     finishTagEdit (true);
-    // Back out to the subsystem that was opened at `depth`, selected so it's easy to spot.
+    // Back out to the subsystem that was opened at `depth`, cyan so it's easy to spot.
     const auto reopened = subPath[depth];
     scale = savedViews[depth].scale;
     offset = savedViews[depth].offset;
@@ -410,12 +410,12 @@ std::vector<std::pair<juce::String, juce::Rectangle<float>>> PatchCanvas::crumbs
         names.add (n->name.empty() ? juce::String ("Subsystem") : u8 (n->name));
         g = &n->inner.front();
     }
-    const auto font = ps::theme::mono (11.0f, true);
-    float x = 13;
+    const auto font = ps::theme::sans (12.5f);
+    float x = 18;
     for (int i = 0; i < names.size(); ++i)
     {
-        const float w = juce::GlyphArrangement::getStringWidth (font, names[i]) + 16;
-        out.push_back ({ names[i], { x, 11, w, 20 } });
+        const float w = juce::GlyphArrangement::getStringWidth (font, names[i]) + 18;
+        out.push_back ({ names[i], { x, 14, w, 22 } });
         x += w + 14; // room for the separator
     }
     return out;
@@ -427,12 +427,12 @@ void PatchCanvas::paintCrumbs (juce::Graphics& g)
     const auto items = crumbs();
     if (items.empty())
         return;
-    const auto bar = items.front().second.getUnion (items.back().second).expanded (3);
-    g.setColour (ps::theme::bar);
-    g.fillRoundedRectangle (bar, 6);
-    g.setColour (lineStrong);
-    g.drawRoundedRectangle (bar.reduced (0.5f), 6, 1);
-    g.setFont (mono (11.0f, true));
+    const auto bar = items.front().second.getUnion (items.back().second).expanded (4);
+    g.setColour (menu);
+    g.fillRoundedRectangle (bar, bar.getHeight() / 2);
+    g.setColour (glassEdge);
+    g.drawRoundedRectangle (bar.reduced (0.5f), bar.getHeight() / 2, 1);
+    g.setFont (sans (12.5f));
     const auto mouse = getMouseXYRelative().toFloat();
     for (size_t i = 0; i < items.size(); ++i)
     {
@@ -440,14 +440,14 @@ void PatchCanvas::paintCrumbs (juce::Graphics& g)
         const bool current = i + 1 == items.size();
         if (! current && r.contains (mouse) && isMouseOver())
         {
-            g.setColour (cellOff);
-            g.fillRoundedRectangle (r, 4);
+            g.setColour (wash);
+            g.fillRoundedRectangle (r, r.getHeight() / 2);
         }
-        g.setColour (current ? text : label);
+        g.setColour (current ? textBright : textSoft);
         g.drawText (name, r, juce::Justification::centred, false);
         if (! current)
         {
-            g.setColour (muted);
+            g.setColour (textDim);
             g.drawText (juce::String::fromUTF8 ("\xE2\x80\xBA"), juce::Rectangle<float> (r.getRight(), r.getY(), 14, r.getHeight()), juce::Justification::centred, false);
         }
     }
@@ -557,8 +557,7 @@ float PatchCanvas::bodyHeight (const ps::Node& n) const { return layoutOf (n).bo
 
 juce::Rectangle<float> PatchCanvas::tagRect (const ps::Node&, const Layout& L, bool output, int port, const std::string& tag) const
 {
-    const auto font = ps::theme::mono (8.5f, true);
-    const float w = juce::GlyphArrangement::getStringWidth (font, u8 (tag)) + 13;
+    const float w = juce::GlyphArrangement::getStringWidth (ps::theme::mono (9.5f), u8 (tag)) + 16;
     const auto p = output ? L.outs[(size_t) port] : L.ins[(size_t) port];
     return output ? juce::Rectangle<float> (p.x + 9, p.y - 7.5f, w, 15) : juce::Rectangle<float> (p.x - 9 - w, p.y - 7.5f, w, 15);
 }
@@ -666,7 +665,9 @@ PatchCanvas::HitResult PatchCanvas::hitTest (juce::Point<float> w) const
 void PatchCanvas::paint (juce::Graphics& g)
 {
     using namespace ps::theme;
-    g.fillAll (canvas);
+    if (backdrop.getWidth() != getWidth() || backdrop.getHeight() != getHeight())
+        renderBackdrop();
+    g.drawImageAt (backdrop, 0, 0);
 
     // Dot grid, every 20 world units.
     const float step = 20.0f * scale;
@@ -704,9 +705,9 @@ void PatchCanvas::paint (juce::Graphics& g)
     if (drag == Drag::box && dragMoved)
     {
         const auto area = juce::Rectangle<float> (dragStart, toScreen (dragWorld));
-        g.setColour (selected.withAlpha (0.1f));
+        g.setColour (cyanSoft);
         g.fillRect (area);
-        g.setColour (selected.withAlpha (0.8f));
+        g.setColour (cyan.withAlpha (0.45f));
         g.drawRect (area, 1.0f);
     }
 
@@ -716,13 +717,18 @@ void PatchCanvas::paint (juce::Graphics& g)
                           ? juce::String ("Drag empty space to select, right-drag to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.")
                           : juce::String ("Inside a subsystem: edits change this copy only. Esc or the path at the top left goes back out.");
     const auto hint = message.isNotEmpty() ? message : idle;
-    g.setFont (mono (10.0f));
-    auto hintArea = getLocalBounds().reduced (8, 6).removeFromBottom (20).toFloat();
-    hintArea = hintArea.withWidth (std::min (hintArea.getWidth(), juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), hint) + 16));
-    g.setColour (canvas.withAlpha (0.85f));
-    g.fillRoundedRectangle (hintArea, 4);
-    g.setColour (message.isNotEmpty() ? textSoft : muted.withAlpha (0.8f));
-    g.drawText (hint, hintArea.reduced (8, 0), juce::Justification::centredLeft, true);
+    g.setFont (sans (11.0f).withExtraKerningFactor (0.03f));
+    auto hintArea = getLocalBounds().reduced (14, 12).removeFromBottom (24).toFloat();
+    hintArea = hintArea.withWidth (std::min (hintArea.getWidth(), juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), hint) + 24));
+    g.setColour (bg.withAlpha (0.85f));
+    g.fillRoundedRectangle (hintArea, hintArea.getHeight() / 2);
+    if (message.isNotEmpty())
+    {
+        g.setColour (glassEdge);
+        g.drawRoundedRectangle (hintArea.reduced (0.5f), hintArea.getHeight() / 2, 1.0f);
+    }
+    g.setColour (message.isNotEmpty() ? textSoft : textDim);
+    g.drawText (hint, hintArea.reduced (12, 0), juce::Justification::centredLeft, true);
 }
 
 void PatchCanvas::paintBlocks (juce::Graphics& g)
@@ -731,17 +737,17 @@ void PatchCanvas::paintBlocks (juce::Graphics& g)
     {
         if (! b.page.empty() && b.page != currentPage)
             continue;
-        const auto c = ps::theme::fromHex (b.colour, ps::theme::muted);
+        const auto c = ps::theme::fromHex (b.colour, ps::theme::textDim);
         const juce::Rectangle<float> r ((float) b.x, (float) b.y, (float) b.w, (float) b.h);
-        g.setColour (c.withAlpha (0.06f));
-        g.fillRoundedRectangle (r, 8);
-        g.setColour (c.withAlpha (0.32f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 8, 1);
-        g.setColour (c);
-        g.fillEllipse (r.getX() + 9, r.getY() + 8, 8, 8);
-        g.setFont (ps::theme::mono (10.0f, true));
-        g.setColour (c.brighter (0.2f));
-        g.drawText (u8 (b.title).toUpperCase(), juce::Rectangle<float> (r.getX() + 24, r.getY(), r.getWidth() - 30, 24),
+        // A section: a faint wash of its colour and a hairline edge, labelled in tracked capitals.
+        g.setColour (c.withAlpha (0.035f));
+        g.fillRoundedRectangle (r, ps::theme::radius);
+        g.setColour (c.withAlpha (0.22f));
+        g.drawRoundedRectangle (r.reduced (0.5f), ps::theme::radius, 1);
+        ps::theme::drawLed (g, { r.getX() + 15, r.getY() + 13 }, c, true, 5.0f);
+        g.setFont (ps::theme::caps (10.0f, 0.22f));
+        g.setColour (c.interpolatedWith (ps::theme::text, 0.45f));
+        g.drawText (u8 (b.title).toUpperCase(), juce::Rectangle<float> (r.getX() + 26, r.getY() + 1, r.getWidth() - 32, 24),
                     juce::Justification::centredLeft, true);
     }
 }
@@ -749,14 +755,14 @@ void PatchCanvas::paintBlocks (juce::Graphics& g)
 void PatchCanvas::paintNotes (juce::Graphics& g)
 {
     g.setFont (ps::theme::sans (11.5f));
-    g.setColour (ps::theme::noteText);
+    g.setColour (ps::theme::textSoft);
     for (auto& t : graph().notes)
     {
         if (! t.page.empty() && t.page != currentPage)
             continue;
         const float w = t.w > 0 ? (float) t.w : 210.0f;
         juce::AttributedString s;
-        s.append (u8 (t.text), ps::theme::sans (11.5f), ps::theme::noteText);
+        s.append (u8 (t.text), ps::theme::sans (11.5f), ps::theme::textSoft);
         s.setLineSpacing (3.0f);
         s.draw (g, { (float) t.x, (float) t.y, w, 400.0f });
     }
@@ -782,7 +788,7 @@ void PatchCanvas::paintWires (juce::Graphics& g)
         const bool lit = viewOut (ia, link.p) > 0 && ! (a.kind == "clock" && link.p == 0);
         auto path = wirePath (La.outs[(size_t) link.p], Lb.ins[(size_t) link.q]);
         const float width = (audio ? 4.0f : 2.2f) + (lit ? 1.4f : 0.0f);
-        g.setColour (l == selectedWire ? juce::Colours::white : kindColour (a).withAlpha (lit ? 1.0f : (audio ? 0.6f : 0.72f)));
+        g.setColour (l == selectedWire ? ps::theme::textBright : kindColour (a).withAlpha (lit ? 1.0f : (audio ? 0.55f : 0.6f)));
         if (reset)
         {
             juce::Path dashed;
@@ -807,16 +813,32 @@ void PatchCanvas::paintCells (juce::Graphics& g, juce::Rectangle<float> r, const
         const juce::Rectangle<float> cell (r.getX() + i * (cw + gap), r.getY(), cw, r.getHeight());
         const int v = cells[(size_t) i];
         if (v > 0)
-            g.setColour (c.withAlpha (i == now ? 1.0f : (v > 1 ? 0.8f : 0.5f)));
+            g.setColour (c.withAlpha (i == now ? 1.0f : (v > 1 ? 0.85f : 0.45f)));
         else
-            g.setColour (editable ? ps::theme::cellOff.brighter (0.1f) : ps::theme::cellOff);
+            g.setColour (editable ? ps::theme::cellOff.withMultipliedAlpha (1.6f) : ps::theme::cellOff);
         g.fillRoundedRectangle (cell, 1.5f);
         if (i == now)
         {
-            g.setColour (ps::theme::text);
+            g.setColour (ps::theme::textBright);
             g.drawRoundedRectangle (cell.expanded (0.5f), 1.5f, 1.0f);
         }
     }
+}
+
+// One option of a segmented control: filled in the module's colour when chosen, otherwise a faint
+// outlined cell.
+void PatchCanvas::paintSegment (juce::Graphics& g, juce::Rectangle<float> r, bool on, juce::Colour c)
+{
+    if (on)
+    {
+        g.setColour (c);
+        g.fillRoundedRectangle (r, 4);
+        return;
+    }
+    g.setColour (ps::theme::wash);
+    g.fillRoundedRectangle (r, 4);
+    g.setColour (ps::theme::hair);
+    g.drawRoundedRectangle (r.reduced (0.5f), 4, 1);
 }
 
 void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, const Layout& L)
@@ -826,46 +848,52 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
     const bool sel = selection.count (n.id) > 0;
     const auto ins = ps::inputsOf (n), outs = ps::outputsOf (n);
 
-    // shadow, body, border
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.fillRoundedRectangle (L.box.translated (0, 4).expanded (1), 7);
-    g.setColour (node);
-    g.fillRoundedRectangle (L.box, 6);
-    g.setColour (sel ? selected : nodeBorder);
-    g.drawRoundedRectangle (L.box.reduced (0.5f), 6, sel ? 2.0f : 1.0f);
+    // A glass panel. Its edge brightens under the mouse; a selected module gets a cyan edge and a
+    // soft cyan ring.
+    if (sel)
+    {
+        g.setColour (cyanSoft);
+        g.fillRoundedRectangle (L.box.expanded (3), radius + 3);
+    }
+    drawPanel (g, L.box, sel ? cyan.withAlpha (0.8f) : (index == hoverNode ? edgeHover : glassEdge));
 
     // header
     const auto h = L.header;
     if (! n.collapsed)
     {
-        g.setColour (lineStrong.darker (0.2f));
+        g.setColour (hair);
         g.fillRect (h.getX() + 1, h.getBottom() - 1, h.getWidth() - 2, 1.0f);
     }
-    g.setColour (muted);
+    g.setColour (textDim);
     juce::Path chevron;
     const float cx = h.getX() + 12, cy = h.getY() + (n.collapsed ? 15.0f : 13.0f);
     chevron.addTriangle (cx - 3.5f, cy - 2, cx + 3.5f, cy - 2, cx, cy + 2.5f);
     if (n.collapsed)
         chevron.applyTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
     g.fillPath (chevron);
-    g.setColour (c);
-    g.fillRoundedRectangle (h.getX() + 22, cy - 4, 8, 8, 2);
+    drawLed (g, { h.getX() + 26, cy }, c, true, 5.0f);
+    // The title in tracked capitals, like the dashboard's panel titles.
     g.setColour (text);
-    g.setFont (sans (11.0f, true));
+    g.setFont (caps (9.5f, 0.1f));
     const auto sub = u8 (ps::subtitleOf (n));
-    const float subW = n.collapsed ? 0.0f : juce::GlyphArrangement::getStringWidth (mono (9.5f), sub) + 4;
-    g.drawText (u8 (ps::titleOf (n)), juce::Rectangle<float> (h.getX() + 36, cy - 8, h.getWidth() - 44 - subW, 16), juce::Justification::centredLeft, true);
-    if (! n.collapsed)
+    // The title keeps its room; the subtitle takes what is left.
+    const auto title = u8 (ps::titleOf (n)).toUpperCase();
+    const float titleW = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), title);
+    const float subW = n.collapsed ? 0.0f
+                                   : std::min (juce::GlyphArrangement::getStringWidth (mono (9.5f), sub) + 4,
+                                               std::max (0.0f, h.getWidth() - 44 - titleW - 6));
+    g.drawText (title, juce::Rectangle<float> (h.getX() + 36, cy - 8, h.getWidth() - 44 - subW, 16), juce::Justification::centredLeft, true);
+    if (! n.collapsed && subW > 12)
     {
-        g.setColour (muted);
+        g.setColour (textDim);
         g.setFont (mono (9.5f));
-        g.drawText (sub, juce::Rectangle<float> (h.getRight() - 7 - subW, cy - 8, subW, 16), juce::Justification::centredRight, false);
+        g.drawText (sub, juce::Rectangle<float> (h.getRight() - 7 - subW, cy - 8, subW, 16), juce::Justification::centredRight, true);
     }
 
     // port labels (MIDI outs show each output's name and note instead)
     if (! n.collapsed)
     {
-        g.setFont (mono (9.0f));
+        g.setFont (mono (9.5f));
         if (n.kind == "midi")
         {
             for (int q = 0; q < (int) n.lanes.size(); ++q)
@@ -874,19 +902,18 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
                 const auto& lane = n.lanes[(size_t) q];
                 g.setColour (textSoft);
                 g.drawText (u8 (lane.name), juce::Rectangle<float> ((float) n.x + 12, ry, L.box.getWidth() - 80, rowH), juce::Justification::centredLeft, true);
-                g.setColour (muted);
+                g.setColour (textDim);
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xB9"), juce::Rectangle<float> (L.box.getRight() - 62, ry, 14, rowH), juce::Justification::centred);
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xBA"), juce::Rectangle<float> (L.box.getRight() - 26, ry, 14, rowH), juce::Justification::centred);
                 g.setColour (c);
                 g.drawText (u8 (ps::noteName (lane.note)), juce::Rectangle<float> (L.box.getRight() - 50, ry, 24, rowH), juce::Justification::centred);
                 const int v = viewIn (index, q);
-                g.setColour (v > 0 ? (v > 1 ? text : c) : cellOff);
-                g.fillEllipse (L.box.getRight() - 11, ry + rowH / 2 - 3, 6, 6);
+                drawLed (g, { L.box.getRight() - 8, ry + rowH / 2 }, v > 1 ? textBright : c, v > 0);
             }
         }
         else
         {
-            g.setColour (muted);
+            g.setColour (textDim);
             for (int i = 0; i < (int) ins.size(); ++i)
                 g.drawText (u8 (ins[(size_t) i]), juce::Rectangle<float> ((float) n.x + 12, (float) n.y + ioTop + i * rowH, L.box.getWidth() / 2 - 12, rowH), juce::Justification::centredLeft, true);
             for (int i = 0; i < (int) outs.size(); ++i)
@@ -905,12 +932,12 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
             const int v = dir == 0 ? viewIn (index, i) : viewOut (index, i);
             const bool lit = v > 0 && ! (n.kind == "clock" && dir == 1 && i == 0) && ! audio;
             const auto r = juce::Rectangle<float> (10, 10).withCentre (pts[(size_t) i]);
-            g.setColour (node);
+            g.setColour (panelBottom);
             if (audio)
                 g.fillRect (r);
             else
                 g.fillEllipse (r);
-            g.setColour (lit ? text : c);
+            g.setColour (lit ? textBright : c);
             if (audio)
                 g.drawRect (r, 2.0f);
             else
@@ -921,7 +948,7 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
     }
 
     // tags
-    g.setFont (mono (8.5f, true));
+    g.setFont (mono (9.5f));
     for (int dir = 0; dir < 2; ++dir)
     {
         const auto& tags = dir == 0 ? n.tagIn : n.tagOut;
@@ -936,13 +963,14 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
             g.setColour (tc);
             const auto p = dir == 0 ? L.ins[(size_t) port] : L.outs[(size_t) port];
             g.drawLine (dir == 0 ? r.getRight() : p.x + 5, p.y, dir == 0 ? p.x - 5 : r.getX(), p.y, 1.0f);
-            g.setColour (lit ? tc : canvas);
-            g.fillRoundedRectangle (r, 3);
-            g.setColour (tc);
-            g.drawRoundedRectangle (r.reduced (0.5f), 3, 1);
-            g.fillRect (r.withWidth (3));
-            g.setColour (lit ? juce::Colour (0xff121418) : text);
-            g.drawText (u8 (tag), r.withTrimmedLeft (4), juce::Justification::centred, false);
+            // A pill, like the dashboard's tags: the tag's colour on the field, filled while a hit passes.
+            const float pill = r.getHeight() / 2;
+            g.setColour (lit ? tc : bg);
+            g.fillRoundedRectangle (r, pill);
+            g.setColour (tc.withAlpha (lit ? 1.0f : 0.5f));
+            g.drawRoundedRectangle (r.reduced (0.5f), pill, 1);
+            g.setColour (lit ? onAccent : tc.interpolatedWith (text, 0.25f));
+            g.drawText (u8 (tag), r, juce::Justification::centred, false);
         }
     }
 }
@@ -958,29 +986,29 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
         switch (it.type)
         {
             case ItemType::text:
-                g.setColour (label);
-                g.setFont (mono (9.5f));
+                g.setColour (textDim);
+                g.setFont (sans (10.0f));
                 g.drawFittedText (it.text, r.toNearestInt(), juce::Justification::topLeft, r.getHeight() > 14 ? 2 : 1, 1.0f);
                 break;
             case ItemType::bigText:
             {
-                g.setColour (text);
-                g.setFont (mono (13.0f, true));
-                g.drawText (juce::String (processor.currentTempo(), 1) + " BPM", r, juce::Justification::centredLeft);
-                g.setColour (muted);
+                // The dashboard's tile value: bold Sora, tracked tight, white fading to ice.
+                g.setFont (sans (15.0f, Weight::bold).withExtraKerningFactor (-0.03f));
+                drawValue (g, juce::String (processor.currentTempo(), 1) + " BPM", r, juce::Justification::centredLeft);
+                g.setColour (textDim);
                 g.setFont (mono (9.5f));
                 g.drawText (processor.isFollowingHost() ? "host" : "internal", r, juce::Justification::centredRight);
                 break;
             }
             case ItemType::stepper:
-                g.setFont (mono (10.0f));
-                g.setColour (label);
+                g.setFont (sans (10.5f));
+                g.setColour (textDim);
                 g.drawText (it.text, r, juce::Justification::centredLeft);
-                g.setColour (muted);
+                g.setColour (textDim);
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xB9"), juce::Rectangle<float> (r.getRight() - 52, r.getY(), 14, r.getHeight()), juce::Justification::centred);
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xBA"), juce::Rectangle<float> (r.getRight() - 12, r.getY(), 12, r.getHeight()), juce::Justification::centred);
-                g.setColour (text);
-                g.setFont (mono (10.0f, true));
+                g.setColour (textBright);
+                g.setFont (mono (10.5f, true));
                 g.drawText (it.value, juce::Rectangle<float> (r.getRight() - 40, r.getY(), 28, r.getHeight()), juce::Justification::centred);
                 break;
             case ItemType::cells:
@@ -995,8 +1023,8 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 for (int k = 0; k < 3; ++k)
                 {
                     const juce::Rectangle<float> row (r.getX(), r.getY() + k * 11.0f, r.getWidth(), 8);
-                    g.setColour (muted);
-                    g.setFont (mono (8.5f, true));
+                    g.setColour (textDim);
+                    g.setFont (mono (9.0f));
                     g.drawText (labels[k], row.withWidth (10), juce::Justification::centredLeft);
                     paintCells (g, row.withTrimmedLeft (12), std::vector<int> (pat[(size_t) k].begin(), pat[(size_t) k].end()), v ? v->pos : -1, c);
                 }
@@ -1012,10 +1040,9 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 {
                     const auto b = juce::Rectangle<float> (r.getX() + r.getWidth() * m / count, r.getY(), r.getWidth() / count, r.getHeight()).reduced (1, 0);
                     const bool on = combine ? n.mode == modes[(size_t) m] : (m == 0) == (n.mode != "merge");
-                    g.setColour (on ? c : cellOff);
-                    g.fillRoundedRectangle (b, 3);
-                    g.setColour (on ? juce::Colour (0xff121418) : label);
-                    g.setFont (mono (9.5f, true));
+                    paintSegment (g, b, on, c);
+                    g.setColour (on ? onAccent : textSoft);
+                    g.setFont (sans (9.5f, on ? Weight::semibold : Weight::regular));
                     const juce::String arrow = juce::String::fromUTF8 (" \xE2\x86\x92 ");
                     const auto caption = combine ? u8 (modes[(size_t) m])
                                                  : (m == 0 ? "1" + arrow + juce::String (ways) : juce::String (ways) + arrow + "1");
@@ -1030,10 +1057,9 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 {
                     const auto b = juce::Rectangle<float> (r.getX() + r.getWidth() * i / ways, r.getY(), r.getWidth() / ways, r.getHeight()).reduced (1, 0);
                     const bool on = v && v->sel >= 0 && i == now;
-                    g.setColour (on ? c : cellOff);
-                    g.fillRoundedRectangle (b, 2);
-                    g.setColour (on ? juce::Colour (0xff121418) : muted);
-                    g.setFont (mono (9.0f, true));
+                    paintSegment (g, b, on, c);
+                    g.setColour (on ? onAccent : textDim);
+                    g.setFont (mono (9.5f, on));
                     g.drawText (juce::String (i + 1), b, juce::Justification::centred);
                 }
                 break;
@@ -1044,64 +1070,65 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 for (int b = 1; b <= 8; ++b)
                 {
                     const auto br = juce::Rectangle<float> (r.getX() + r.getWidth() * (b - 1) / 8.0f, r.getY(), r.getWidth() / 8.0f, r.getHeight()).reduced (1, 0);
-                    g.setColour (b == bus ? c : cellOff);
-                    g.fillRoundedRectangle (br, 3);
-                    g.setColour (b == bus ? juce::Colour (0xff121418) : label);
-                    g.setFont (mono (9.5f, true));
+                    paintSegment (g, br, b == bus, c);
+                    g.setColour (b == bus ? onAccent : textSoft);
+                    g.setFont (mono (10.0f, b == bus));
                     g.drawText (juce::String (b), br, juce::Justification::centred);
                 }
                 break;
             }
             case ItemType::meter:
             {
+                // The dashboard's meter: a 4px track with a fill that brightens toward its end.
+                const auto track = r.withSizeKeepingCentre (r.getWidth(), 4.0f);
                 g.setColour (cellOff);
-                g.fillRoundedRectangle (r, 3);
+                g.fillRoundedRectangle (track, 2);
                 const float level = juce::jlimit (0.0f, 1.0f, processor.busLevel (n.get ("bus", 1)) * 1.6f);
-                g.setColour (c);
-                g.fillRoundedRectangle (r.withWidth (r.getWidth() * level), 3);
+                if (level > 0.0f)
+                {
+                    const auto fill = track.withWidth (track.getWidth() * level);
+                    g.setGradientFill (juce::ColourGradient (c.withAlpha (0.5f), fill.getX(), 0, c, fill.getRight(), 0, false));
+                    g.fillRoundedRectangle (fill, 2);
+                }
                 break;
             }
             case ItemType::xy:
             {
-                g.setColour (juce::Colour (0xff181b20));
-                g.fillRoundedRectangle (r, 5);
-                g.setColour (lineStrong);
-                g.drawRoundedRectangle (r.reduced (0.5f), 5, 1);
+                g.setColour (bg);
+                g.fillRoundedRectangle (r, radius);
+                g.setColour (glassEdge);
+                g.drawRoundedRectangle (r.reduced (0.5f), radius, 1);
                 const auto inner = r.reduced (7);
-                g.setColour (juce::Colour (0xff3d4450));
+                g.setColour (off);
                 for (int i = 0; i < 5; ++i)
                     for (int j = 0; j < 5; ++j)
                         g.fillEllipse (juce::Rectangle<float> (3, 3).withCentre ({ inner.getX() + inner.getWidth() * i / 4, inner.getY() + inner.getHeight() * j / 4 }));
                 const juce::Point<float> dot (inner.getX() + inner.getWidth() * n.get ("mx", 50) / 100.0f, inner.getY() + inner.getHeight() * n.get ("my", 20) / 100.0f);
-                g.setColour (c.withAlpha (0.35f));
-                g.fillEllipse (juce::Rectangle<float> (16, 16).withCentre (dot));
-                g.setColour (c);
-                g.fillEllipse (juce::Rectangle<float> (10, 10).withCentre (dot));
+                drawLed (g, dot, c, true, 10.0f);
                 break;
             }
             case ItemType::button:
-                g.setColour (lineStrong);
-                g.fillRoundedRectangle (r, 4);
-                g.setColour (text);
-                g.setFont (mono (10.5f, true));
+                // A hairline pill.
+                g.setColour (pillEdge);
+                g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() / 2, 1);
+                g.setColour (textSoft);
+                g.setFont (sans (10.5f));
                 g.drawText (it.text, r, juce::Justification::centred, false);
                 break;
             case ItemType::sample:
             {
-                g.setColour (juce::Colour (0xff181b20));
-                g.fillRoundedRectangle (r, 4);
-                g.setColour (lineStrong);
-                g.drawRoundedRectangle (r.reduced (0.5f), 4, 1);
-                g.setColour (muted);
-                g.setFont (mono (10.0f));
+                g.setColour (bg);
+                g.fillRoundedRectangle (r, radiusSm);
+                g.setColour (glassEdge);
+                g.drawRoundedRectangle (r.reduced (0.5f), radiusSm, 1);
+                g.setColour (textDim);
+                g.setFont (sans (10.5f));
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xB9"), r.withWidth (16), juce::Justification::centred);
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xBA"), r.withTrimmedLeft (r.getWidth() - 16), juce::Justification::centred);
                 g.setColour (text);
-                g.setFont (sans (10.5f, true));
+                g.setFont (sans (10.5f));
                 g.drawText (it.text, r.reduced (18, 0), juce::Justification::centred, true);
-                const bool hit = viewIn (index, 0) > 0;
-                g.setColour (hit ? c : cellOff);
-                g.fillEllipse (r.getRight() - 24, r.getCentreY() - 3, 6, 6);
+                drawLed (g, { r.getRight() - 21, r.getCentreY() }, c, viewIn (index, 0) > 0);
                 break;
             }
         }
@@ -1455,6 +1482,76 @@ void PatchCanvas::mouseMove (const juce::MouseEvent& e)
     const bool point = hit.what == Hit::zone || hit.what == Hit::inPort || hit.what == Hit::outPort || hit.what == Hit::inTag
                        || hit.what == Hit::outTag || hit.what == Hit::wire;
     setMouseCursor (point ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+    const int over = hit.what == Hit::wire || hit.what == Hit::blockTitle ? -1 : hit.node;
+    if (over != hoverNode)
+    {
+        hoverNode = over;
+        repaint();
+    }
+}
+
+void PatchCanvas::mouseExit (const juce::MouseEvent&)
+{
+    if (hoverNode >= 0)
+    {
+        hoverNode = -1;
+        repaint();
+    }
+}
+
+// One flat deep-blue field with the dashboard's wireframe cube in the top corner: a cube with its
+// faces split into a 3 x 3 grid, turned to show three faces, its back edges fainter. Drawn once
+// per size, since the workspace repaints while the patch plays.
+void PatchCanvas::renderBackdrop()
+{
+    using namespace ps::theme;
+    const int w = std::max (1, getWidth()), h = std::max (1, getHeight());
+    backdrop = juce::Image (juce::Image::RGB, w, h, false);
+    juce::Graphics g (backdrop);
+    g.fillAll (bg);
+    if (w < 520 || h < 360)
+        return;
+
+    struct V3
+    {
+        float x, y, z;
+    };
+    const float ay = 0.62f, ax = 0.52f, az = 0.18f; // yaw, pitch and roll, in radians
+    const float size = 46.0f;
+    const juce::Point<float> centre ((float) w - 104.0f, 96.0f);
+    const auto project = [&] (V3 p) {
+        float x = p.x * std::cos (ay) + p.z * std::sin (ay), z = -p.x * std::sin (ay) + p.z * std::cos (ay);
+        float y = p.y * std::cos (ax) - z * std::sin (ax);
+        z = p.y * std::sin (ax) + z * std::cos (ax);
+        const float rx = x * std::cos (az) - y * std::sin (az), ry = x * std::sin (az) + y * std::cos (az);
+        const float persp = 7.0f / (7.0f + z);
+        return std::pair<juce::Point<float>, float> (centre + juce::Point<float> (rx, ry) * size * persp, z);
+    };
+    // Each line of the grid on each face, split into front and back by depth.
+    juce::Path front, back;
+    for (int axis = 0; axis < 3; ++axis)
+        for (int side = -1; side <= 1; side += 2)
+            for (int k = 0; k <= 3; ++k)
+                for (int dir = 0; dir < 2; ++dir)
+                {
+                    const float t = -1.0f + k * 2.0f / 3.0f;
+                    V3 a {}, b {};
+                    float* ca = &a.x;
+                    float* cb = &b.x;
+                    ca[axis] = cb[axis] = (float) side;
+                    const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+                    ca[dir == 0 ? u : v] = cb[dir == 0 ? u : v] = t;
+                    ca[dir == 0 ? v : u] = -1.0f;
+                    cb[dir == 0 ? v : u] = 1.0f;
+                    const auto pa = project (a), pb = project (b);
+                    auto& path = (pa.second + pb.second) * 0.5f > 0.2f ? back : front;
+                    path.startNewSubPath (pa.first);
+                    path.lineTo (pb.first);
+                }
+    g.setColour (cyan.withAlpha (0.3f * 0.22f));
+    g.strokePath (back, juce::PathStrokeType (1.0f));
+    g.setColour (cyan.withAlpha (0.3f));
+    g.strokePath (front, juce::PathStrokeType (1.0f));
 }
 
 void PatchCanvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
@@ -1856,7 +1953,7 @@ void PatchCanvas::showNodeMenu (int index)
     if (n.kind != "subin" && n.kind != "subout")
     {
         menu.addSeparator();
-        menu.addItem (selection.size() > 1 ? "Delete selected modules" : "Delete", [this] { deleteSelection(); });
+        menu.addItem (selection.size() > 1 ? "Delete cyan modules" : "Delete", [this] { deleteSelection(); });
     }
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
@@ -1924,11 +2021,11 @@ void PatchCanvas::showTextEditor (juce::Rectangle<int> r, const juce::String& te
     {
         tagEditor = std::make_unique<juce::TextEditor>();
         auto& ed = *tagEditor;
-        ed.setFont (ps::theme::mono (12.0f, true));
-        ed.setColour (juce::TextEditor::backgroundColourId, ps::theme::panel);
+        ed.setFont (ps::theme::sans (12.0f));
+        ed.setColour (juce::TextEditor::backgroundColourId, ps::theme::ink);
         ed.setColour (juce::TextEditor::textColourId, ps::theme::text);
-        ed.setColour (juce::TextEditor::outlineColourId, ps::theme::selected);
-        ed.setColour (juce::TextEditor::focusedOutlineColourId, ps::theme::selected);
+        ed.setColour (juce::TextEditor::outlineColourId, ps::theme::cyan);
+        ed.setColour (juce::TextEditor::focusedOutlineColourId, ps::theme::cyan);
         ed.onReturnKey = [this] { finishTagEdit (true); };
         ed.onEscapeKey = [this] { finishTagEdit (false); };
         ed.onFocusLost = [this] { finishTagEdit (true); };
@@ -1936,7 +2033,7 @@ void PatchCanvas::showTextEditor (juce::Rectangle<int> r, const juce::String& te
     }
     auto& ed = *tagEditor;
     ed.setInputRestrictions (textTarget == TextTarget::tag ? 16 : 32);
-    ed.setTextToShowWhenEmpty (placeholder, ps::theme::muted);
+    ed.setTextToShowWhenEmpty (placeholder, ps::theme::textDim);
     ed.setText (text, false);
     ed.setBounds (r.constrainedWithin (getLocalBounds().reduced (4)));
     tagEditing = true;

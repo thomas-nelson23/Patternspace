@@ -94,6 +94,19 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         NAMESPACE PatternspacePresets
         SOURCES ${PATTERNSPACE_PRESETS} ${PATTERNSPACE_SUBSYSTEMS})
 
+    # Sora, JetBrains Mono and Michroma (SIL Open Font License, resources/fonts/licenses), the
+    # Home Dashboard's typefaces. Sora and JetBrains Mono are static cuts of the variable fonts.
+    juce_add_binary_data(PatternspaceFonts
+        HEADER_NAME PatternspaceFonts.h
+        NAMESPACE PatternspaceFonts
+        SOURCES
+            resources/fonts/Sora-Regular.ttf
+            resources/fonts/Sora-SemiBold.ttf
+            resources/fonts/Sora-Bold.ttf
+            resources/fonts/JetBrainsMono-Regular.ttf
+            resources/fonts/JetBrainsMono-Medium.ttf
+            resources/fonts/Michroma-Regular.ttf)
+
     target_sources(Patternspace PRIVATE
         source/plugin/PatchCanvas.cpp
         source/plugin/PatchCanvas.h
@@ -103,6 +116,7 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         source/plugin/PluginProcessor.h
         source/plugin/Presets.cpp
         source/plugin/Presets.h
+        source/plugin/Theme.cpp
         source/plugin/Theme.h
         source/plugin/Updater.cpp
         source/plugin/Updater.h
@@ -125,6 +139,7 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         PRIVATE
             patternspace_core
             PatternspacePresets
+            PatternspaceFonts
             juce::juce_audio_utils
             juce::juce_gui_basics
         PUBLIC
