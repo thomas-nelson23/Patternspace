@@ -151,6 +151,44 @@ void exerciseEditor (const ps::json::Preset& preset)
     editorBase.reset();
 }
 
+// Parameters set from the audio thread (as a host's automation does) survive a save and load into a
+// fresh instance, with no message loop running in between, as clap-validator checks.
+void stateRoundTrip()
+{
+    PatternspaceProcessor a;
+    a.prepareToPlay (44100, 64);
+    juce::AudioBuffer<float> audio (a.getTotalNumOutputChannels(), 64);
+    juce::MidiBuffer midi;
+    std::map<juce::String, float> wanted;
+    int i = 0;
+    for (auto* p : a.getParameters())
+        if (auto* withId = dynamic_cast<juce::RangedAudioParameter*> (p))
+        {
+            const float v = (float) ((i++ * 37) % 100) / 100.0f;
+            p->setValueNotifyingHost (v);
+            // The state holds the value on the parameter's own scale, so a switch or a stepped range snaps.
+            wanted[withId->paramID] = withId->convertTo0to1 (withId->convertFrom0to1 (v));
+        }
+    a.processBlock (audio, midi);
+    juce::MemoryBlock state;
+    a.getStateInformation (state);
+
+    PatternspaceProcessor b;
+    b.setStateInformation (state.getData(), (int) state.getSize());
+    int wrong = 0;
+    for (auto* p : b.getParameters())
+        if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
+            if (std::abs (p->getValue() - wanted[withId->paramID]) > 0.002f)
+            {
+                if (wrong++ < 3)
+                    std::cerr << "  " << withId->paramID << ": " << p->getValue() << " after load, set " << wanted[withId->paramID] << "\n";
+            }
+    check (wrong == 0, "every parameter survives a state save and load");
+    juce::MemoryBlock again;
+    b.getStateInformation (again);
+    check (again == state, "saving the reloaded state gives the same bytes");
+}
+
 void exerciseEveryModule()
 {
     PatternspaceProcessor processor;
@@ -198,6 +236,7 @@ int main()
     for (auto& preset : ps::presets::factory())
         exerciseEditor (preset);
     exerciseEveryModule();
+    stateRoundTrip();
     std::cout << checks - failures << "/" << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

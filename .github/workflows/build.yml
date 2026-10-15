@@ -126,8 +126,10 @@ jobs:
             | jq -r --arg p "$pattern" '.assets[] | select(.name | test($p)) | .browser_download_url' | head -1)
           echo "Using $url"
           curl -sSL -o clap-validator.zip "$url"
-          mkdir -p clap-validator && (cd clap-validator && unzip -qo ../clap-validator.zip)
+          # the Linux and macOS zips hold a tarball; the Windows one the .exe itself
+          mkdir -p clap-validator && (cd clap-validator && unzip -qo ../clap-validator.zip && for t in *.tar.gz; do [ -f "$t" ] && tar xzf "$t"; done; true)
           validator=$(find clap-validator -type f \( -name clap-validator -o -name clap-validator.exe \) | head -1)
+          [ -n "$validator" ] || { echo "::error::clap-validator not found in the archive"; find clap-validator; exit 1; }
           chmod +x "$validator"
           clap="build/Patternspace_artefacts/Release/CLAP/Patternspace.clap"
           if [ "$RUNNER_OS" = "Linux" ]; then
