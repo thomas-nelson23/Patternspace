@@ -94,6 +94,16 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         NAMESPACE PatternspacePresets
         SOURCES ${PATTERNSPACE_PRESETS} ${PATTERNSPACE_SUBSYSTEMS})
 
+    # Fira Code (SIL Open Font License, resources/fonts/OFL.txt), the design system's only typeface.
+    juce_add_binary_data(PatternspaceFonts
+        HEADER_NAME PatternspaceFonts.h
+        NAMESPACE PatternspaceFonts
+        SOURCES
+            resources/fonts/FiraCode-Light.ttf
+            resources/fonts/FiraCode-Regular.ttf
+            resources/fonts/FiraCode-Medium.ttf
+            resources/fonts/FiraCode-SemiBold.ttf)
+
     target_sources(Patternspace PRIVATE
         source/plugin/PatchCanvas.cpp
         source/plugin/PatchCanvas.h
@@ -103,6 +113,7 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         source/plugin/PluginProcessor.h
         source/plugin/Presets.cpp
         source/plugin/Presets.h
+        source/plugin/Theme.cpp
         source/plugin/Theme.h
         source/plugin/Updater.cpp
         source/plugin/Updater.h
@@ -125,6 +136,7 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         PRIVATE
             patternspace_core
             PatternspacePresets
+            PatternspaceFonts
             juce::juce_audio_utils
             juce::juce_gui_basics
         PUBLIC

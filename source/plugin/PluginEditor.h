@@ -2,6 +2,7 @@
 
 #include "PatchCanvas.h"
 #include "PluginProcessor.h"
+#include "Theme.h"
 #include "Updater.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -33,7 +34,7 @@ private:
     void refreshUpdateButton();
 
     PatternspaceProcessor& processor;
-    juce::LookAndFeel_V4 look;
+    ps::theme::Look look;
 
     PatchCanvas canvas;
     std::unique_ptr<Library> library;
@@ -44,7 +45,7 @@ private:
     juce::TextButton playButton { "Play" };
     juce::ToggleButton syncButton { "Host sync" };
     juce::Slider tempoSlider;
-    juce::TextButton zoomOut { "-" }, zoomIn { "+" }, fitButton { "Fit" };
+    juce::TextButton zoomOut { juce::String::fromUTF8 ("\xE2\x88\x92") }, zoomIn { "+" }, fitButton { "Fit" };
     juce::Label zoomLabel;
 
     juce::AudioProcessorValueTreeState::ButtonAttachment playAttachment, syncAttachment;

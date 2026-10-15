@@ -16,23 +16,23 @@ namespace
     const std::vector<KindInfo>& kinds()
     {
         static const std::vector<KindInfo> k {
-            { "clock", "Clock", 0x7c8796, {}, { "1/16", "bar", "2 bars" }, {}, {}, 150, false },
-            { "euclid", "Euclidean", 0xf2a541, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "random", "Random", 0x5cc8d6, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "ca", "Cellular", 0xe57a9a, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "grids", "Drum map", 0xf5d77a, { "clk", "rst" }, { "kick", "snare", "hat" }, {}, {}, 220, false },
-            { "step", "Step grid", 0xffb08a, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "div", "Clock divider", 0x7c8796, { "clk", "rst" }, { "out" }, {}, {}, 150, false },
-            { "accent", "Accent", 0x9fb6ff, { "in" }, { "out" }, {}, {}, 150, false },
-            { "prob", "Probability", 0x9fb6ff, { "in" }, { "out" }, {}, {}, 150, false },
-            { "combine", "Combine", 0x9fb6ff, { "A", "B" }, { "out" }, {}, {}, 150, false },
-            { "switch", "Switch", 0x9fb6ff, {}, {}, {}, {}, 150, false },
-            { "sample", "Sample player", 0x7bd88f, { "trig" }, { "audio" }, {}, { P::audio }, 160, false },
-            { "audio", "Audio out", 0x7bd88f, { "audio" }, {}, { P::audio }, {}, 150, false },
-            { "midi", "MIDI out", 0xb394ff, {}, {}, {}, {}, 170, false },
-            { "sub", "Subsystem", 0xe3e8f0, {}, {}, {}, {}, 160, false },
-            { "subin", "Inputs", 0x7c8796, {}, {}, {}, {}, 150, false },
-            { "subout", "Outputs", 0x7c8796, {}, {}, {}, {}, 150, false },
+            { "clock", "Clock", 0x6f858e, {}, { "1/16", "bar", "2 bars" }, {}, {}, 150, false },
+            { "euclid", "Euclidean", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "random", "Random", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "ca", "Cellular", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "grids", "Drum map", 0x00f0ff, { "clk", "rst" }, { "kick", "snare", "hat" }, {}, {}, 220, false },
+            { "step", "Step grid", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "div", "Clock divider", 0x6f858e, { "clk", "rst" }, { "out" }, {}, {}, 150, false },
+            { "accent", "Accent", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
+            { "prob", "Probability", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
+            { "combine", "Combine", 0x9cc7cf, { "A", "B" }, { "out" }, {}, {}, 150, false },
+            { "switch", "Switch", 0x9cc7cf, {}, {}, {}, {}, 150, false },
+            { "sample", "Sample player", 0xff2a4f, { "trig" }, { "audio" }, {}, { P::audio }, 160, false },
+            { "audio", "Audio out", 0xff2a4f, { "audio" }, {}, { P::audio }, {}, 150, false },
+            { "midi", "MIDI out", 0xff2a4f, {}, {}, {}, {}, 170, false },
+            { "sub", "Subsystem", 0xd9eef2, {}, {}, {}, {}, 160, false },
+            { "subin", "Inputs", 0x6f858e, {}, {}, {}, {}, 150, false },
+            { "subout", "Outputs", 0x6f858e, {}, {}, {}, {}, 150, false },
         };
         return k;
     }
@@ -81,10 +81,10 @@ const KindInfo* kindInfo (const std::string& kind)
 const std::vector<LibrarySection>& librarySections()
 {
     static const std::vector<LibrarySection> s {
-        { "GENERATORS", { "euclid", "random", "ca", "step", "grids" } },
-        { "SHAPERS", { "accent", "prob", "combine", "switch", "div" } },
-        { "SOUND", { "sample", "audio" } },
-        { "OUTPUTS", { "midi" } },
+        { "Generators", { "euclid", "random", "ca", "step", "grids" } },
+        { "Shapers", { "accent", "prob", "combine", "switch", "div" } },
+        { "Sound", { "sample", "audio" } },
+        { "Outputs", { "midi" } },
     };
     return s;
 }
