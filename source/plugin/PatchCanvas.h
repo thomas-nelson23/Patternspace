@@ -7,6 +7,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <limits>
+#include <map>
 #include <set>
 
 class PatternspaceProcessor;
@@ -51,7 +53,20 @@ public:
     void zoomStep (int direction);
     void fitView();
 
-    void addModule (const std::string& kind);
+    void addModule (const std::string& kind, juce::Point<float> world = { std::numeric_limits<float>::max(), 0 });
+    void selectAll();
+    void duplicateSelection();
+    void nudgeSelection (float dx, float dy);
+    bool snapToGrid() const { return snap; }
+    void setSnapToGrid (bool on);
+    bool anyExpanded() const; // on the current tab, for a Collapse all / Expand all toggle
+    bool showingHelp() const { return helpShown; }
+    void setShowHelp (bool on);
+
+    // The view per tab and the open subsystem, as a string for the plug-in state.
+    juce::String viewStateToString() const;
+    void restoreViewState (const juce::String& state);
+    std::function<void()> onViewStateChanged;
     void addSubsystem (const ps::presets::SubsystemTemplate& subsystem);
     void moveSelectionToPage (const std::string& pageId);
     void collapseAll (bool collapse);
@@ -80,7 +95,8 @@ private:
         xy,
         open,
         addPort,
-        reroll
+        reroll,
+        paramValue // the value itself: drag up and down, scroll, or double-click to type
     };
     struct Zone
     {
@@ -123,7 +139,8 @@ private:
         wire,
         xy,
         block,
-        box // left-drag on empty space draws a selection box
+        box,  // left-drag on empty space draws a selection box
+        param // dragging a value up and down
     };
 
     void timerCallback() override;
@@ -169,9 +186,12 @@ private:
     void deleteSelection();
     void editTag (int node, bool output, int port);
     void finishTagEdit (bool keep);
-    void showMessage (const juce::String&);
+    void showMessage (const juce::String&, int milliseconds = 2600);
     void showNodeMenu (int node);
-    void edited(); // commit the patch to the engine
+    void showCanvasMenu (juce::Point<float> world);
+    void paintHelp (juce::Graphics&);
+    void applyParamDelta (int node, const std::string& key, int delta, const juce::String& undoGroup);
+    void edited (const juce::String& undoGroup = {}); // commit the patch to the engine
 
     PatternspaceProcessor& processor;
     std::vector<ps::Engine::View> view;
@@ -204,6 +224,10 @@ private:
     juce::Point<float> lastMouse; // where pasted modules land when the mouse is over the canvas
     int pasteCount = 0;           // without the mouse, each paste lands a step further from the copy
     std::set<std::string> boxBase; // what was selected before a shift box-drag, kept as the box changes
+    int dragAccum = 0;             // pixels dragged since the last value step
+    bool snap = false;
+    bool helpShown = false;
+    std::map<std::string, SavedView> pageViews; // the view of each tab left and come back to
 
     std::unique_ptr<juce::TextEditor> tagEditor; // made once, shown while a tag is being named
     bool tagEditing = false;
@@ -211,8 +235,10 @@ private:
     {
         tag,
         portName,
-        subName
+        subName,
+        param
     } textTarget = TextTarget::tag;
+    std::string textKey; // the parameter being typed
     std::string tagNode;
     bool tagOutput = false;
     int tagPort = 0;

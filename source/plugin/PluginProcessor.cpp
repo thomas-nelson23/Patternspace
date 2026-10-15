@@ -41,13 +41,13 @@ PatternspaceProcessor::PatternspaceProcessor()
 
     const auto& factory = ps::presets::factory();
     if (! factory.empty())
-        loadPatch (factory.front().patch, factory.front().name);
+        loadPatch (factory.front().patch, factory.front().name, false);
     else
     {
         ps::Graph g;
         g.nodes.push_back (ps::makeNode ("clock", "clk", 14, 250));
         ps::normalise (g);
-        loadPatch (g, "Empty");
+        loadPatch (g, "Empty", false);
     }
 }
 
@@ -231,8 +231,66 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
 }
 
-void PatternspaceProcessor::commitPatch()
+void PatternspaceProcessor::pushUndo (const juce::String& undoGroup)
 {
+    const auto now = juce::Time::getMillisecondCounter();
+    const bool merge = undoGroup.isNotEmpty() && undoGroup == lastUndoGroup && now - lastUndoTime < 2000 && ! undoStack.empty();
+    lastUndoGroup = undoGroup;
+    lastUndoTime = now;
+    if (merge)
+        return;
+    undoStack.push_back (committed);
+    if (undoStack.size() > 200)
+        undoStack.erase (undoStack.begin());
+    redoStack.clear();
+}
+
+void PatternspaceProcessor::undo()
+{
+    if (undoStack.empty())
+        return;
+    redoStack.push_back ({ graph, name });
+    auto back = std::move (undoStack.back());
+    undoStack.pop_back();
+    graph = std::move (back.graph);
+    name = back.name;
+    lastUndoGroup.clear();
+    committed = { graph, name };
+    restoringHistory = true;
+    commitPatch();
+    sendSynchronousChangeMessage();
+    restoringHistory = false;
+}
+
+void PatternspaceProcessor::redo()
+{
+    if (redoStack.empty())
+        return;
+    undoStack.push_back ({ graph, name });
+    auto next = std::move (redoStack.back());
+    redoStack.pop_back();
+    graph = std::move (next.graph);
+    name = next.name;
+    lastUndoGroup.clear();
+    committed = { graph, name };
+    restoringHistory = true;
+    commitPatch();
+    sendSynchronousChangeMessage();
+    restoringHistory = false;
+}
+
+void PatternspaceProcessor::commitPatch (const juce::String& undoGroup)
+{
+    auto text = ps::json::toString (graph);
+    {
+        // Record the state before this edit, unless nothing changed (a drag that went nowhere).
+        const juce::ScopedLock sl (stateLock);
+        if (! restoringHistory && (text != savedPatch || name != savedName))
+        {
+            pushUndo (undoGroup);
+            committed = { graph, name };
+        }
+    }
     auto next = std::make_unique<ps::Engine>();
     next->load (graph);
     next->setViewPath (viewPath);
@@ -244,18 +302,27 @@ void PatternspaceProcessor::commitPatch()
         std::swap (engine, next);
         engineVersion = version;
     }
-    auto text = ps::json::toString (graph);
     const juce::ScopedLock sl (stateLock);
     savedPatch = std::move (text);
     savedName = name;
 }
 
-void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::String& newName)
+void PatternspaceProcessor::loadPatch (const ps::Graph& newPatch, const juce::String& newName, bool undoable)
 {
     graph = newPatch;
     name = newName;
     viewPath.clear(); // the editor goes back to the root of a new patch
-    commitPatch();
+    if (! undoable)
+    {
+        undoStack.clear();
+        redoStack.clear();
+        committed = { graph, name };
+        restoringHistory = true;
+        commitPatch();
+        restoringHistory = false;
+    }
+    else
+        commitPatch();
     sendChangeMessage();
 }
 
@@ -276,6 +343,18 @@ bool PatternspaceProcessor::copyView (std::vector<ps::Engine::View>& out) const
         return false;
     out = engine->view();
     return true;
+}
+
+juce::String PatternspaceProcessor::getViewState() const
+{
+    const juce::ScopedLock sl (stateLock);
+    return viewState;
+}
+
+void PatternspaceProcessor::setViewState (const juce::String& state)
+{
+    const juce::ScopedLock sl (stateLock);
+    viewState = state;
 }
 
 float PatternspaceProcessor::busLevel (int bus) const
@@ -299,6 +378,10 @@ void PatternspaceProcessor::getStateInformation (juce::MemoryBlock& destData)
         xml->setAttribute ("patch", savedPatch);
         xml->setAttribute ("patchName", savedName);
     }
+    {
+        const juce::ScopedLock sl (stateLock);
+        xml->setAttribute ("view", viewState);
+    }
     copyXmlToBinary (*xml, destData);
 }
 
@@ -309,19 +392,21 @@ void PatternspaceProcessor::setStateInformation (const void* data, int sizeInByt
         return;
     const auto patchText = xml->getStringAttribute ("patch");
     const auto patchName = xml->getStringAttribute ("patchName");
+    setViewState (xml->getStringAttribute ("view"));
     xml->removeAttribute ("patch");
     xml->removeAttribute ("patchName");
+    xml->removeAttribute ("view");
     params.replaceState (juce::ValueTree::fromXml (*xml));
 
     ps::Graph g;
     if (patchText.isEmpty() || ! ps::json::fromString (patchText, g))
         return;
     if (juce::MessageManager::existsAndIsCurrentThread())
-        loadPatch (g, patchName);
+        loadPatch (g, patchName, false);
     else
         juce::MessageManager::callAsync ([safe = juce::WeakReference<PatternspaceProcessor> (this), g, patchName] {
             if (auto* self = safe.get())
-                self->loadPatch (g, patchName);
+                self->loadPatch (g, patchName, false);
         });
 }
 
