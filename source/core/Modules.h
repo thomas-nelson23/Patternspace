@@ -3,6 +3,7 @@
 #include "Patch.h"
 
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,18 @@ void removeSubsystemPort (Graph& parent, Node& subsystem, bool output, int port)
 void renameSubsystemPort (Node& subsystem, bool output, int port, const std::string& name);
 // Changing a port's type drops the wires on it, since gate and audio ports don't connect.
 void setSubsystemPortType (Graph& parent, Node& subsystem, bool output, int port, PortType type);
+
+// Moves the modules with these ids into a new subsystem at (x, y). Wires that cross the new edge
+// become ports, one per outside port, and so do tags that cross it, since a tag only reaches
+// across one level: the subsystem's output takes over a tag that outside inputs listen to.
+// Inside, the modules keep their arrangement, with the Inputs module to their left and the
+// Outputs module to their right. Modules it can't move (missing, Inputs, Outputs) are skipped.
+struct Grouped
+{
+    std::string id; // the new subsystem, empty when nothing could be grouped
+    int inputs = 0, outputs = 0, tags = 0;
+};
+Grouped groupIntoSubsystem (Graph& graph, const std::set<std::string>& ids, const std::string& name, double x, double y, double width);
 
 // The modes a Combine or Switch can be in, in display order.
 const std::vector<std::string>& combineModes();

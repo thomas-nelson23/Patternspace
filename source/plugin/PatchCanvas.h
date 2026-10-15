@@ -17,6 +17,7 @@ class PatternspaceProcessor;
 // opened. Drag empty space to pan, Ctrl/Cmd-scroll or pinch to zoom, drag an output onto an input to
 // wire it, click a port to tag it.
 class PatchCanvas : public juce::Component,
+                    public juce::DragAndDropTarget,
                     private juce::Timer
 {
 public:
@@ -34,6 +35,13 @@ public:
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseMagnify (const juce::MouseEvent&, float scaleFactor) override;
     bool keyPressed (const juce::KeyPress&) override;
+
+    // Modules and subsystems dragged in from the library land where they are dropped.
+    bool isInterestedInDragSource (const SourceDetails&) override;
+    void itemDragEnter (const SourceDetails&) override;
+    void itemDragExit (const SourceDetails&) override;
+    void itemDropped (const SourceDetails&) override;
+    std::function<void (const juce::var& item, juce::Point<float> world)> onLibraryDrop;
 
     // Called when the processor loads a different patch.
     void patchReplaced();
@@ -67,7 +75,12 @@ public:
     juce::String viewStateToString() const;
     void restoreViewState (const juce::String& state);
     std::function<void()> onViewStateChanged;
-    void addSubsystem (const ps::presets::SubsystemTemplate& subsystem);
+    void addSubsystem (const ps::presets::SubsystemTemplate& subsystem, juce::Point<float> world = { std::numeric_limits<float>::max(), 0 });
+    void groupSelection(); // the selected modules become one subsystem; wires across its edge become ports
+    void addBlock (juce::Point<float> world, bool aroundSelection = false);
+    void addNote (juce::Point<float> world);
+    bool minimapShown() const { return minimap; }
+    void setMinimapShown (bool on);
     void moveSelectionToPage (const std::string& pageId);
     void collapseAll (bool collapse);
     void copySelection();
@@ -124,7 +137,9 @@ private:
         header,
         body,
         wire,
-        blockTitle
+        blockTitle,
+        blockResize, // the handle in a block's bottom-right corner
+        note
     };
     struct HitResult
     {
@@ -141,7 +156,10 @@ private:
         xy,
         block,
         box,  // left-drag on empty space draws a selection box
-        param // dragging a value up and down
+        param, // dragging a value up and down
+        note,
+        blockResize,
+        minimap
     };
 
     void timerCallback() override;
@@ -175,6 +193,12 @@ private:
 
     void paintBlocks (juce::Graphics&);
     void paintNotes (juce::Graphics&);
+    void paintTagLinks (juce::Graphics&); // dashed, from the tag under the mouse to its listeners
+    void paintMinimap (juce::Graphics&);
+    juce::Rectangle<float> minimapRect() const;        // screen space; empty when hidden
+    juce::Rectangle<float> minimapWorldBounds() const; // what the minimap shows
+    static void paintKindGlyph (juce::Graphics&, const std::string& kind, juce::Point<float> centre, juce::Colour);
+    juce::Rectangle<float> noteRect (const ps::Note&) const;
     void paintWires (juce::Graphics&);
     void paintNode (juce::Graphics&, int index, const ps::Node&, const Layout&);
     void paintBody (juce::Graphics&, int index, const ps::Node&, const Layout&);
@@ -186,6 +210,12 @@ private:
     void connect (int fromNode, int fromPort, int toNode, int toPort);
     void deleteSelection();
     void editTag (int node, bool output, int port);
+    void showTagMenu (int node, bool output, int port);
+    void goToNode (const std::string& id); // select it and bring it into view, switching tabs if needed
+    void showBlockMenu (int block);
+    void showNoteMenu (int note);
+    void editBlockTitle (int block);
+    void editNote (int note);
     void finishTagEdit (bool keep);
     void showMessage (const juce::String&, int milliseconds = 2600);
     void showNodeMenu (int node);
@@ -222,6 +252,10 @@ private:
     std::string dropPage; // the tab a module drag is over, if it is not the current one
     int dragBlock = -1;
     juce::Point<float> blockStart;
+    int selectedBlock = -1, selectedNote = -1; // the block or note last clicked, for Delete and the menus
+    std::string hoverTag;                      // the tag under the mouse: its links show dashed
+    bool minimap = true;
+    bool dropHover = false; // something from the library is being dragged over the canvas
     juce::Point<float> lastMouse; // where pasted modules land when the mouse is over the canvas
     int pasteCount = 0;           // without the mouse, each paste lands a step further from the copy
     std::set<std::string> boxBase; // what was selected before a shift box-drag, kept as the box changes
@@ -237,8 +271,11 @@ private:
         tag,
         portName,
         subName,
-        param
+        param,
+        blockTitle,
+        noteText
     } textTarget = TextTarget::tag;
+    int textIndex = -1; // the block or note being edited
     std::string textKey; // the parameter being typed
     std::string tagNode;
     bool tagOutput = false;
