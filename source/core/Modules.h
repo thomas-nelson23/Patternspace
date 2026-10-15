@@ -23,6 +23,9 @@ struct KindInfo
 
 const KindInfo* kindInfo (const std::string& kind);
 
+// The velocities a plain hit and an accent carry (see Engine.h).
+constexpr int kHitVelocity = 96, kAccentVelocity = 127;
+
 struct LibrarySection
 {
     const char* title;
@@ -63,6 +66,7 @@ void resizeLanes (Node& node, int count);
 std::string noteName (int note); // 36 -> "C1"
 int noteNumber (const std::string& name, int fallback = 36);
 const char* gmDrumName (int note); // nullptr when the note isn't a common GM drum
+const std::vector<std::pair<int, const char*>>& gmDrumList(); // the common GM drums, note and name
 
 // Drops wires and tags on ports a module no longer has.
 void prunePorts (Graph& graph, const Node& node);

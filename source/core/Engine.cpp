@@ -4,6 +4,8 @@
 #include "Patterns.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -21,6 +23,7 @@ namespace
     enum class K
     {
         clock, euclid, random, ca, grids, step, div, accent, prob, combine, sw,
+        vel, shift, ratchet, fill, scene,
         sample, audio, midi, sub, subin, subout, other
     };
 
@@ -31,7 +34,8 @@ namespace
             { "grids", K::grids }, { "step", K::step }, { "div", K::div }, { "accent", K::accent },
             { "prob", K::prob }, { "combine", K::combine }, { "switch", K::sw }, { "sample", K::sample },
             { "audio", K::audio }, { "midi", K::midi }, { "sub", K::sub }, { "subin", K::subin },
-            { "subout", K::subout },
+            { "subout", K::subout }, { "vel", K::vel }, { "shift", K::shift }, { "ratchet", K::ratchet },
+            { "fill", K::fill }, { "scene", K::scene },
         };
         auto it = m.find (k);
         return it == m.end() ? K::other : it->second;
@@ -61,7 +65,15 @@ namespace
         std::vector<int> pat; // Euclidean, Random, Step grid
         int mx = 50, my = 20, fills[3] {}, chaos = 0;
         int div = 3, chance = 7, ways = 4;
-        bool split = true;
+        bool split = true, randomOrder = false;
+        int every = 8, accentLevel = kAccent, softLevel = kHit; // Accent
+        int velocity = 100, humanise = 0;                      // Velocity
+        int delay = 1;                                         // Shift, in steps
+        int repeats = 2;                                       // Ratchet
+        int bars = 4, density = 5;                             // Fill
+        int scene = 1;                                         // Scene
+        double noteLength = 0.5, nudge = 0;                    // MIDI out, in steps
+        std::vector<int> laneChannels, laneChokes;
         Combine mode = Combine::orMode;
         int sample = 0, pitch = 0, decay = 6, bus = 1;
         std::vector<int> buses; // Audio outs a Sample player feeds
@@ -75,6 +87,8 @@ namespace
         int pos = -1, row = 0, loop = 0, cnt = 0, sel = -1, fired = 0, trig = 0;
         DrumMapPattern gp {};
         int gpLoop = -1;
+        std::array<int, 64> ring {}; // Shift: the last steps' inputs
+        int ringAt = 0;
 
         void reset()
         {
@@ -82,6 +96,8 @@ namespace
             row = loop = cnt = fired = trig = 0;
             sel = -1;
             gpLoop = -1;
+            ring.fill (0);
+            ringAt = 0;
         }
     };
 
@@ -198,6 +214,28 @@ namespace
                     break;
                 case K::div: x.div = std::max (1, m.get ("div", 3)); break;
                 case K::prob: x.chance = m.get ("chance", 7); break;
+                case K::accent:
+                    x.every = std::max (1, m.get ("every", 8));
+                    x.accentLevel = std::max (1, std::min (127, m.get ("lvl", kAccent)));
+                    x.softLevel = std::max (1, std::min (127, m.get ("soft", kHit)));
+                    break;
+                case K::vel:
+                    x.velocity = std::max (1, std::min (127, m.get ("vel", 100)));
+                    x.humanise = std::max (0, std::min (10, m.get ("rnd")));
+                    break;
+                case K::shift: x.delay = std::max (0, std::min (63, m.get ("steps", 1))); break;
+                case K::ratchet:
+                    x.repeats = std::max (1, std::min (8, m.get ("n", 2)));
+                    x.chance = std::max (0, std::min (10, m.get ("chance", 10)));
+                    break;
+                case K::fill:
+                    x.bars = std::max (1, m.get ("bars", 4));
+                    x.density = std::max (0, std::min (10, m.get ("dens", 5)));
+                    break;
+                case K::scene:
+                    x.ways = std::max (1, m.get ("ways", 4));
+                    x.scene = std::max (1, std::min (x.ways, m.get ("scene", 1)));
+                    break;
                 case K::combine:
                     x.mode = m.mode == "AND" ? Combine::andMode
                            : m.mode == "XOR" ? Combine::xorMode
@@ -207,6 +245,7 @@ namespace
                 case K::sw:
                     x.ways = std::max (1, m.get ("ways", 4));
                     x.split = m.mode != "merge";
+                    x.randomOrder = m.get ("rnd") != 0;
                     break;
                 case K::sample:
                 {
@@ -220,8 +259,14 @@ namespace
                 case K::audio: x.bus = std::max (1, std::min (8, m.get ("bus", 1))); break;
                 case K::midi:
                     x.channel = std::max (1, std::min (16, m.get ("ch", 10)));
+                    x.noteLength = std::max (1, std::min (32, m.get ("len", 1))) - 0.5;
+                    x.nudge = std::max (-50, std::min (50, m.get ("ofs"))) / 100.0;
                     for (auto& l : m.lanes)
+                    {
                         x.notes.push_back (std::max (0, std::min (127, l.note)));
+                        x.laneChannels.push_back (l.channel >= 1 && l.channel <= 16 ? l.channel : x.channel);
+                        x.laneChokes.push_back (l.choke > 0 ? (int) ((x.hash % 4096) * 8 + (std::uint32_t) std::min (7, l.choke)) : 0);
+                    }
                     break;
                 case K::sub:
                     x.inner = std::make_unique<CGraph>();
@@ -353,9 +398,9 @@ struct Engine::Impl
                 if (x.out.size() >= 3)
                 {
                     const int spb = std::max (1, stepsPerBar);
-                    x.out[0] = 1;
-                    x.out[1] = nonNegMod (g - barStart, spb) == 0 ? 1 : 0;
-                    x.out[2] = nonNegMod (g - barStart, 2 * spb) == 0 ? 1 : 0;
+                    x.out[0] = kHit;
+                    x.out[1] = nonNegMod (g - barStart, spb) == 0 ? kHit : 0;
+                    x.out[2] = nonNegMod (g - barStart, 2 * spb) == 0 ? kHit : 0;
                 }
                 break;
 
@@ -397,7 +442,7 @@ struct Engine::Impl
                 if (x.pos >= 0)
                     cell = x.k == K::ca ? cellularRows()[(size_t) (x.row % (int) cellularRows().size())][(size_t) x.pos]
                                         : x.pat[(size_t) x.pos];
-                x.out[0] = (clk || rst) && x.pos >= 0 && cell ? 1 : 0;
+                x.out[0] = (clk || rst) && x.pos >= 0 && cell ? (cell > 1 ? kAccent : kHit) : 0;
                 break;
             }
 
@@ -429,7 +474,7 @@ struct Engine::Impl
                     x.gpLoop = loop;
                 }
                 for (size_t k = 0; k < 3; ++k)
-                    x.out[k] = (clk || rst) && x.pos >= 0 ? x.gp[k][(size_t) x.pos] : 0;
+                    x.out[k] = (clk || rst) && x.pos >= 0 && x.gp[k][(size_t) x.pos] ? (x.gp[k][(size_t) x.pos] > 1 ? kAccent : kHit) : 0;
                 break;
             }
 
@@ -441,7 +486,7 @@ struct Engine::Impl
                 int v = 0;
                 if (clk)
                 {
-                    v = x.cnt % x.div == 0 ? 1 : 0;
+                    v = x.cnt % x.div == 0 ? clk : 0;
                     ++x.cnt;
                 }
                 x.out[0] = v;
@@ -451,9 +496,79 @@ struct Engine::Impl
             case K::accent:
             {
                 const int v = inv (0);
-                x.out[0] = v ? (nonNegMod (g, 8) == 0 ? 2 : 1) : 0;
+                x.out[0] = v ? withVelocity (v, nonNegMod (g, x.every) == 0 ? x.accentLevel : x.softLevel) : 0;
                 break;
             }
+
+            case K::vel:
+            {
+                const int v = inv (0);
+                int level = x.velocity;
+                if (v && x.humanise > 0)
+                {
+                    // A draw per step and module, so a song position always lands the same.
+                    const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                    Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ 0x51ED270Bu);
+                    level += (int) std::lround ((r.next() * 2.0 - 1.0) * x.humanise * 6.0);
+                }
+                x.out[0] = v ? withVelocity (v, std::max (1, std::min (127, level))) : 0;
+                break;
+            }
+
+            case K::shift:
+            {
+                // Every step goes into the ring; the output is what came in `delay` steps ago.
+                if (inv (1))
+                {
+                    x.ring.fill (0);
+                    x.ringAt = 0;
+                }
+                x.ring[(size_t) x.ringAt] = inv (0);
+                const int from = (x.ringAt - x.delay + (int) x.ring.size()) % (int) x.ring.size();
+                x.out[0] = x.ring[(size_t) from];
+                x.ringAt = (x.ringAt + 1) % (int) x.ring.size();
+                break;
+            }
+
+            case K::ratchet:
+            {
+                const int v = inv (0);
+                bool go = v != 0 && x.chance > 0;
+                if (go && x.chance < 10)
+                {
+                    const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                    Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ 0x2545F491u);
+                    go = r.next() < x.chance / 10.0;
+                }
+                x.out[0] = go ? withRatchets (v, x.repeats) : v;
+                break;
+            }
+
+            case K::fill:
+            {
+                // The last bar of every `bars` bars adds seeded random hits to whatever comes in.
+                const int v = inv (0);
+                const int spb = std::max (1, stepsPerBar);
+                const std::int64_t bar = (g - nonNegMod (g, spb)) / spb;
+                const bool fillBar = nonNegMod (bar + 1, x.bars) == 0;
+                int extra = 0;
+                if (fillBar && x.density > 0)
+                {
+                    const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                    Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ 0x7F4A7C15u);
+                    // Denser towards the end of the bar, as a fill builds.
+                    const double where = (nonNegMod (g, spb) + 1.0) / spb;
+                    extra = r.next() < x.density / 10.0 * where ? kHit : 0;
+                }
+                x.out[0] = v ? v : extra;
+                x.fired = fillBar ? 1 : 0;
+                break;
+            }
+
+            case K::scene:
+                x.out[0] = inv (x.scene - 1);
+                x.sel = x.scene - 1;
+                break;
 
             case K::prob:
             {
@@ -468,22 +583,23 @@ struct Engine::Impl
                     Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ (std::uint32_t) (g >> 32));
                     roll = r.next();
                 }
-                x.out[0] = (in && roll < x.chance / 10.0) ? 1 : 0;
+                x.out[0] = (in && roll < x.chance / 10.0) ? in : 0;
                 break;
             }
 
             case K::combine:
             {
-                const bool a = inv (0) != 0, b = inv (1) != 0;
-                bool r = false;
+                const int a = inv (0), b = inv (1);
+                const int louder = velocityOf (a) >= velocityOf (b) ? a : b;
+                int r = 0;
                 switch (x.mode)
                 {
-                    case Combine::orMode: r = a || b; break;
-                    case Combine::andMode: r = a && b; break;
-                    case Combine::xorMode: r = a != b; break;
-                    case Combine::aMinusB: r = a && ! b; break;
+                    case Combine::orMode: r = louder; break;
+                    case Combine::andMode: r = a && b ? louder : 0; break;
+                    case Combine::xorMode: r = (a != 0) != (b != 0) ? louder : 0; break;
+                    case Combine::aMinusB: r = a && ! b ? a : 0; break;
                 }
-                x.out[0] = r ? 1 : 0;
+                x.out[0] = r;
                 break;
             }
 
@@ -492,6 +608,16 @@ struct Engine::Impl
                 const int w = x.ways, st = inv (0), rs = inv (1);
                 if (rs)
                     x.sel = 0;
+                else if (st && x.randomOrder)
+                {
+                    // A fresh position each step, never the one before, decided by the song position.
+                    const auto step = (std::uint32_t) (g & 0xffffffff) * 0x9E3779B1u;
+                    Rng r (seed ^ step ^ x.hash ^ (subDepth * 0x85EBCA6Bu) ^ 0x3C6EF372u);
+                    int pick = (int) (r.next() * w);
+                    if (w > 1 && pick == x.sel)
+                        pick = (pick + 1) % w;
+                    x.sel = pick;
+                }
                 else if (st)
                     x.sel = x.sel < 0 ? 0 : (x.sel + 1) % w;
                 if (x.sel >= w)
@@ -515,7 +641,7 @@ struct Engine::Impl
                 if (x.trig && out)
                     for (int bus : x.buses)
                         if (out->hits.size() < out->hits.capacity())
-                            out->hits.push_back ({ x.sample, bus, x.trig > 1, x.pitch, x.decay });
+                            out->hits.push_back ({ x.sample, bus, isAccent (x.trig), x.pitch, x.decay, velocityOf (x.trig), ratchetsOf (x.trig), 0.0 });
                 break;
 
             case K::midi:
@@ -524,7 +650,8 @@ struct Engine::Impl
                     {
                         const int v = q < (int) x.in.size() ? x.in[(size_t) q] : 0;
                         if (v && out->notes.size() < out->notes.capacity())
-                            out->notes.push_back ({ x.channel, x.notes[(size_t) q], v > 1 ? 127 : 96 });
+                            out->notes.push_back ({ x.laneChannels[(size_t) q], x.notes[(size_t) q], velocityOf (v), x.noteLength, ratchetsOf (v),
+                                                    x.laneChokes[(size_t) q], x.nudge });
                     }
                 break;
 
@@ -717,13 +844,13 @@ std::string Engine::valuesAt (const std::string& path) const
     auto join = [] (const std::vector<int>& v, size_t n) {
         std::string s;
         for (size_t i = 0; i < n && i < v.size(); ++i)
-            s += (i ? "," : "") + std::to_string (v[i]);
+            s += (i ? "," : "") + std::to_string (levelOf (v[i]));
         return s;
     };
     if (x->k == K::midi)
         return join (x->in, x->notes.size());
     if (x->k == K::sample)
-        return std::to_string (x->trig);
+        return std::to_string (levelOf (x->trig));
     if (x->k == K::subout || x->k == K::audio || x->k == K::other)
         return {};
     return join (x->out, x->out.size());

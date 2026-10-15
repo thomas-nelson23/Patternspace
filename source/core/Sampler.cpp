@@ -87,7 +87,8 @@ void Sampler::trigger (const StepOutput::Hit& hit, int offset)
         v = std::min_element (voices.begin(), voices.end(), [] (const Voice& a, const Voice& b) { return a.env < b.env; });
 
     // Same envelope as the prototype: an exponential fall to -60 dB over 60 ms plus 60 ms per decay step.
-    const double gain = hit.accent ? 0.55 : 0.4;
+    // Velocity sets the level: a plain hit (96) is the prototype's 0.4, an accent (127) its 0.55.
+    const double gain = 0.4 + (std::max (1, std::min (127, hit.velocity)) - 96) * (0.15 / 31.0);
     const double seconds = 0.06 + std::max (1, std::min (10, hit.decay)) * 0.06;
     v->data = &bank[(size_t) hit.sample];
     v->pos = 0;

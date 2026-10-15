@@ -110,7 +110,8 @@ private:
         open,
         addPort,
         reroll,
-        paramValue // the value itself: drag up and down, scroll, or double-click to type
+        paramValue, // the value itself: drag up and down, scroll, or double-click to type
+        lane        // a MIDI out's output name: opens its menu
     };
     struct Zone
     {
@@ -213,6 +214,7 @@ private:
     void showTagMenu (int node, bool output, int port);
     void goToNode (const std::string& id); // select it and bring it into view, switching tabs if needed
     void showBlockMenu (int block);
+    void showLaneMenu (int node, int lane);
     void showNoteMenu (int note);
     void editBlockTitle (int block);
     void editNote (int note);

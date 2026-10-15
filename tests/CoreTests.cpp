@@ -291,13 +291,13 @@ void testMeterAndFollow()
     {
         o.clear();
         engine.step (i, o);
-        bars += juce::String (engine.view()[0].out[1]);
+        bars += juce::String (ps::levelOf (engine.view()[0].out[1]));
     }
     checkEq (bars, juce::String ("100000000000100000000000"), "in 3/4 the bar output fires every 12 sixteenths");
     engine.setMeter (16, 8); // bar 1 starts on step 8
     o.clear();
     engine.step (24, o);
-    checkEq (engine.view()[0].out[1], 1, "a bar start that isn't step 0 is respected");
+    checkEq (ps::levelOf (engine.view()[0].out[1]), 1, "a bar start that isn't step 0 is respected");
 
     // Phrase: an 11-step pattern re-phases at a jump. Free: it keeps counting.
     auto phase = [&] (int follow) {
@@ -527,6 +527,179 @@ void testGroupIntoSubsystem()
     checkEq ((int) ps::groupIntoSubsystem (g, { "nope" }, "Empty", 0, 0, 0).id.size(), 0, "grouping nothing does nothing");
 }
 
+
+// The signal carries velocity and ratchets; the new shapers bend it in known ways.
+void testVelocityAndShapers()
+{
+    checkEq (ps::levelOf (ps::kHit), 1, "a plain hit is level 1");
+    checkEq (ps::levelOf (ps::kAccent), 2, "an accent is level 2");
+    checkEq (ps::ratchetsOf (ps::withRatchets (ps::kHit, 3)), 3, "ratchets ride above the velocity");
+    checkEq (ps::velocityOf (ps::withRatchets (ps::kHit, 3)), ps::kHit, "and leave it alone");
+    checkEq (ps::withRatchets (0, 3), 0, "a rest can't ratchet");
+
+    // clock -> euclid (16 of 16) -> shaper -> midi, one lane
+    auto build = [] (const std::string& kind, std::function<void (ps::Node&)> set = {}) {
+        ps::Graph g;
+        g.pages = { { "p", "A" } };
+        auto clk = ps::makeNode ("clock", "clk", 0, 0);
+        auto e = ps::makeNode ("euclid", "e", 0, 0);
+        e.set ("hits", 16);
+        auto sh = ps::makeNode (kind, "sh", 0, 0);
+        if (set)
+            set (sh);
+        auto m = ps::makeNode ("midi", "m", 0, 0);
+        ps::resizeLanes (m, 1);
+        g.nodes = { clk, e, sh, m };
+        g.links = { { "clk", 0, "e", 0 }, { "e", 0, "sh", 0 }, { "sh", 0, "m", 0 } };
+        return g;
+    };
+    auto run = [] (const ps::Graph& g, int steps, std::function<void (int, const ps::StepOutput&)> each) {
+        ps::Engine engine;
+        engine.load (g);
+        engine.setMeter (16, 0);
+        ps::StepOutput out;
+        for (int s = 0; s < steps; ++s)
+        {
+            out.clear();
+            engine.step (s, out);
+            each (s, out);
+        }
+    };
+
+    // Accent: every N steps at one level, the rest at another.
+    run (build ("accent", [] (ps::Node& n) { n.set ("every", 4); n.set ("lvl", 120); n.set ("soft", 70); }), 8, [] (int s, const ps::StepOutput& o) {
+        checkEq ((int) o.notes.size(), 1, "one note per step through Accent");
+        if (! o.notes.empty())
+            checkEq (o.notes.front().velocity, s % 4 == 0 ? 120 : 70, "Accent sets the velocity on step " + juce::String (s));
+    });
+    // Velocity: a fixed level, deterministic humanising.
+    run (build ("vel", [] (ps::Node& n) { n.set ("vel", 55); }), 4, [] (int, const ps::StepOutput& o) {
+        if (! o.notes.empty())
+            checkEq (o.notes.front().velocity, 55, "Velocity sets the level");
+    });
+    {
+        juce::String a, b;
+        for (auto* t : { &a, &b })
+            run (build ("vel", [] (ps::Node& n) { n.set ("vel", 80); n.set ("rnd", 5); }), 8, [t] (int, const ps::StepOutput& o) {
+                if (! o.notes.empty())
+                    *t += juce::String (o.notes.front().velocity) + ",";
+            });
+        checkEq (a, b, "humanised velocities repeat for the same song position");
+        check (a.contains (",") && a != "80,80,80,80,80,80,80,80,", "and vary around the level");
+    }
+    // Shift: the pattern arrives N steps late. Euclid 4 of 16 gives hits on 0, 4, 8, 12.
+    {
+        auto g = build ("shift", [] (ps::Node& n) { n.set ("steps", 3); });
+        g.find ("e")->set ("hits", 4);
+        juce::String hits;
+        run (g, 16, [&hits] (int s, const ps::StepOutput& o) { if (! o.notes.empty()) hits += juce::String (s) + ","; });
+        checkEq (hits, juce::String ("3,7,11,15,"), "Shift delays by three steps");
+    }
+    // Ratchet: every hit repeats; a MIDI out passes the count on.
+    run (build ("ratchet", [] (ps::Node& n) { n.set ("n", 3); n.set ("chance", 10); }), 2, [] (int, const ps::StepOutput& o) {
+        if (! o.notes.empty())
+            checkEq (o.notes.front().repeats, 3, "Ratchet asks for three notes in the step");
+    });
+    // Fill: silence in, hits appear only on the last bar of every two.
+    {
+        auto g = build ("fill", [] (ps::Node& n) { n.set ("bars", 2); n.set ("dens", 10); });
+        g.find ("e")->set ("hits", 0);
+        int bar1 = 0, bar2 = 0;
+        run (g, 32, [&] (int s, const ps::StepOutput& o) { (s < 16 ? bar1 : bar2) += (int) o.notes.size(); });
+        checkEq (bar1, 0, "Fill stays quiet on an ordinary bar");
+        check (bar2 > 4, "and fills the last bar of the cycle");
+    }
+    // Scene: picks one of its inputs.
+    {
+        ps::Graph g;
+        g.pages = { { "p", "A" } };
+        auto clk = ps::makeNode ("clock", "clk", 0, 0);
+        auto a = ps::makeNode ("euclid", "a", 0, 0);
+        a.set ("hits", 16);
+        auto b = ps::makeNode ("euclid", "b", 0, 0);
+        b.set ("hits", 0);
+        auto sc = ps::makeNode ("scene", "sc", 0, 0);
+        sc.set ("ways", 2);
+        sc.set ("scene", 2);
+        g.nodes = { clk, a, b, sc };
+        g.links = { { "clk", 0, "a", 0 }, { "clk", 0, "b", 0 }, { "a", 0, "sc", 0 }, { "b", 0, "sc", 1 } };
+        checkEq ((int) ps::inputsOf (sc).size(), 2, "a Scene has an input per way");
+        ps::Engine engine;
+        engine.load (g);
+        ps::StepOutput out;
+        engine.step (0, out);
+        checkEq (juce::String (engine.valuesAt ("sc")), juce::String ("0"), "scene 2 hears the silent input");
+        g.find ("sc")->set ("scene", 1);
+        engine.load (g);
+        engine.step (0, out);
+        checkEq (juce::String (engine.valuesAt ("sc")), juce::String ("1"), "scene 1 hears the busy one");
+    }
+    // Switch in random order: deterministic, never the same position twice in a row.
+    {
+        auto g = build ("switch", [] (ps::Node& n) { n.set ("ways", 4); n.set ("rnd", 1); });
+        g.links = { { "clk", 0, "e", 0 }, { "clk", 0, "sh", 0 }, { "e", 0, "sh", 2 } };
+        juce::String a, b;
+        for (auto* t : { &a, &b })
+        {
+            ps::Engine engine;
+            engine.load (g);
+            ps::StepOutput out;
+            int previous = -1;
+            for (int s = 0; s < 32; ++s)
+            {
+                engine.step (s, out);
+                const int sel = engine.view()[2].sel;
+                check (sel != previous, "a random Switch moves every step");
+                previous = sel;
+                *t += juce::String (sel);
+            }
+        }
+        checkEq (a, b, "its order is the same every run");
+    }
+    // Step grid levels and length.
+    {
+        auto st = ps::makeNode ("step", "st", 0, 0);
+        ps::Graph g;
+        checkEq ((int) st.cells.size(), 16, "a Step grid starts with 16 cells");
+        ps::stepParam (g, st, "len", 8);
+        checkEq ((int) st.cells.size(), 24, "its length grows the grid");
+        st.cells[0] = 2;
+        st.cells[1] = 1;
+        g.nodes = { ps::makeNode ("clock", "clk", 0, 0), st };
+        g.links = { { "clk", 0, "st", 0 } };
+        ps::Engine engine;
+        engine.load (g);
+        ps::StepOutput out;
+        engine.step (0, out);
+        checkEq (juce::String (engine.valuesAt ("st")), juce::String ("2"), "a level-2 cell is an accent");
+        engine.step (1, out);
+        checkEq (juce::String (engine.valuesAt ("st")), juce::String ("1"), "a level-1 cell a hit");
+    }
+    // MIDI out: note length, nudge, per-lane channel and choke groups reach the output.
+    {
+        auto g = build ("accent");
+        auto* m = g.find ("m");
+        m->set ("len", 3);
+        m->set ("ofs", -10);
+        m->lanes.front().channel = 5;
+        m->lanes.front().choke = 2;
+        run (g, 1, [] (int, const ps::StepOutput& o) {
+            check (! o.notes.empty(), "a note plays");
+            if (o.notes.empty())
+                return;
+            const auto& n = o.notes.front();
+            checkEq (n.channel, 5, "the lane's own channel wins");
+            check (std::abs (n.length - 2.5) < 1e-9, "length is in steps, ending half a step early");
+            check (std::abs (n.offset + 0.1) < 1e-9, "nudge is a share of a step");
+            check (n.choke != 0, "the choke group is set");
+        });
+        ps::Graph copy;
+        check (ps::json::fromString (ps::json::toString (g), copy), "lanes with channel and choke save");
+        checkEq (copy.find ("m")->lanes.front().channel, 5, "and load the channel");
+        checkEq (copy.find ("m")->lanes.front().choke, 2, "and the choke group");
+    }
+}
+
 // The editor draws an open subsystem from the engine's view of the graph inside it.
 void testSubsystemView()
 {
@@ -551,7 +724,7 @@ void testSubsystemView()
         engine.step (s, out);
         const int v = engine.view()[(size_t) pr].out[0];
         hits += v > 0 ? 1 : 0;
-        mismatches += juce::String (v) != juce::String (engine.valuesAt ("sn/pr")) ? 1 : 0;
+        mismatches += juce::String (ps::levelOf (v)) != juce::String (engine.valuesAt ("sn/pr")) ? 1 : 0;
     }
     checkEq (mismatches, 0, "the view inside sn follows its modules");
     check (hits > 0, "the snare inside sn plays");
@@ -626,6 +799,7 @@ int main()
     testSubsystemView();
     testNewSubsystem();
     testGroupIntoSubsystem();
+    testVelocityAndShapers();
     testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";
