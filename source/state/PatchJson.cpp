@@ -105,6 +105,7 @@ namespace
         auto o = obj();
         if (root)
         {
+            put (o, "v", kPatchFormatVersion);
             juce::Array<var> pages;
             for (auto& p : g.pages)
             {
@@ -161,6 +162,13 @@ namespace
             for (auto& [t, c] : g.tagColours)
                 put (tc, str (t).toRawUTF8(), str (c));
             put (o, "tagColors", tc);
+        }
+        if (root && ! g.settings.empty())
+        {
+            auto st = obj();
+            for (auto& [k, v] : g.settings)
+                put (st, k.c_str(), v);
+            put (o, "settings", st);
         }
         return o;
     }
@@ -315,9 +323,17 @@ namespace
                 g.notes.push_back (nt);
             }
         if (root)
+        {
             if (auto* tc = v["tagColors"].getDynamicObject())
                 for (auto& p : tc->getProperties())
                     g.tagColours[p.name.toString().toStdString()] = std8 (p.value);
+            if (auto* st = v["settings"].getDynamicObject())
+                for (auto& p : st->getProperties())
+                    g.settings[p.name.toString().toStdString()] = toInt (p.value);
+            // Files newer than this build may hold things it doesn't know; they load as far as
+            // they can rather than failing. Older files are upgraded by normalise().
+            g.settings["_v"] = toInt (v["v"], 1);
+        }
         return true;
     }
 } // namespace

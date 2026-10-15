@@ -1,0 +1,150 @@
+[0/2] Re-checking globbed directories...
+[1/86] Building CXX object CMakeFiles/patternspace_core.dir/source/core/Patterns.cpp.o
+[2/86] Building CXX object CMakeFiles/patternspace_core.dir/source/core/Patch.cpp.o
+[3/86] Building CXX object CMakeFiles/juce_lv2_helper.dir/_deps/juce-src/modules/juce_audio_plugin_client/LV2/juce_LV2ManifestHelper.cpp.o
+[4/86] Linking CXX executable juce_lv2_helper
+[5/86] Building CXX object CMakeFiles/patternspace_core.dir/source/core/Sampler.cpp.o
+[6/86] Building CXX object CMakeFiles/patternspace_core.dir/source/core/Engine.cpp.o
+[7/86] Building CXX object CMakeFiles/patternspace_core.dir/source/core/Modules.cpp.o
+[8/86] Linking CXX static library libpatternspace_core.a
+[9/86] Building CXX object CMakeFiles/PatternspaceTests.dir/source/update/UpdateCheck.cpp.o
+[10/86] Building CXX object CMakeFiles/PatternspaceTests.dir/tests/CoreTests.cpp.o
+[11/86] Building CXX object CMakeFiles/PatternspaceTests.dir/_deps/juce-src/modules/juce_core/juce_core_CompilationTime.cpp.o
+[12/86] Generating juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData1.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData2.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData3.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData4.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData5.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData6.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData7.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData8.cpp, juce_binarydata_PatternspacePresets/JuceLibraryCode/PatternspacePresets.h
+[13/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData1.cpp.o
+[14/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData2.cpp.o
+[15/86] Building CXX object CMakeFiles/Patternspace_vst3_helper.dir/_deps/juce-src/modules/juce_audio_plugin_client/VST3/juce_VST3ManifestHelper.cpp.o
+[16/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData3.cpp.o
+[17/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData4.cpp.o
+[18/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData5.cpp.o
+[19/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData6.cpp.o
+[20/86] Linking CXX executable Patternspace_vst3_helper
+[21/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData7.cpp.o
+[22/86] Building CXX object CMakeFiles/PatternspacePresets.dir/juce_binarydata_PatternspacePresets/JuceLibraryCode/BinaryData8.cpp.o
+[23/86] Generating juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData1.cpp, juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData2.cpp, juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData3.cpp, juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData4.cpp, juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData5.cpp, juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData6.cpp, juce_binarydata_PatternspaceFonts/JuceLibraryCode/PatternspaceFonts.h
+[24/86] Linking CXX static library libPatternspacePresets.a
+[25/86] Building CXX object CMakeFiles/PatternspaceTests.dir/source/state/PatchJson.cpp.o
+[26/86] Building CXX object CMakeFiles/Patternspace.dir/source/plugin/PluginEditor.cpp.o
+In file included from /home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.h:205,
+                 from /home/claude/patternspace/source/plugin/PatchCanvas.h:7,
+                 from /home/claude/patternspace/source/plugin/PluginEditor.h:3,
+                 from /home/claude/patternspace/source/plugin/PluginEditor.cpp:1:
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/components/juce_Component.h:915:18: warning: 'virtual bool juce::Component::hitTest(int, int)' was hidden [-Woverloaded-virtual=]
+  915 |     virtual bool hitTest (int x, int y);
+      |                  ^~~~~~~
+/home/claude/patternspace/source/plugin/PatchCanvas.h:149:15: note:   by 'PatchCanvas::HitResult PatchCanvas::hitTest(juce::Point<float>) const'
+  149 |     HitResult hitTest (juce::Point<float> world) const;
+      |               ^~~~~~~
+[27/86] Building CXX object CMakeFiles/Patternspace.dir/source/plugin/PatchCanvas.cpp.o
+In file included from /home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.h:205,
+                 from /home/claude/patternspace/source/plugin/PatchCanvas.h:7,
+                 from /home/claude/patternspace/source/plugin/PatchCanvas.cpp:1:
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/components/juce_Component.h:915:18: warning: 'virtual bool juce::Component::hitTest(int, int)' was hidden [-Woverloaded-virtual=]
+  915 |     virtual bool hitTest (int x, int y);
+      |                  ^~~~~~~
+/home/claude/patternspace/source/plugin/PatchCanvas.h:149:15: note:   by 'PatchCanvas::HitResult PatchCanvas::hitTest(juce::Point<float>) const'
+  149 |     HitResult hitTest (juce::Point<float> world) const;
+      |               ^~~~~~~
+[28/86] Building CXX object CMakeFiles/Patternspace.dir/source/plugin/PluginProcessor.cpp.o
+In file included from /home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.h:205,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_processors/juce_audio_processors.h:66,
+                 from /home/claude/patternspace/source/plugin/PluginProcessor.h:7,
+                 from /home/claude/patternspace/source/plugin/PluginProcessor.cpp:1:
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/components/juce_Component.h:915:18: warning: 'virtual bool juce::Component::hitTest(int, int)' was hidden [-Woverloaded-virtual=]
+  915 |     virtual bool hitTest (int x, int y);
+      |                  ^~~~~~~
+In file included from /home/claude/patternspace/source/plugin/PluginEditor.h:3,
+                 from /home/claude/patternspace/source/plugin/PluginProcessor.cpp:5:
+/home/claude/patternspace/source/plugin/PatchCanvas.h:149:15: note:   by 'PatchCanvas::HitResult PatchCanvas::hitTest(juce::Point<float>) const'
+  149 |     HitResult hitTest (juce::Point<float> world) const;
+      |               ^~~~~~~
+[29/86] Building CXX object CMakeFiles/Patternspace.dir/source/plugin/Presets.cpp.o
+[30/86] Building CXX object CMakeFiles/Patternspace.dir/source/state/PatchJson.cpp.o
+[31/86] Building CXX object CMakeFiles/Patternspace.dir/source/plugin/Theme.cpp.o
+[32/86] Building CXX object CMakeFiles/Patternspace.dir/source/plugin/Updater.cpp.o
+[33/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_processors/juce_audio_processors_ara.cpp.o
+[34/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_processors/juce_audio_processors_lv2_libs.cpp.o
+[35/86] Building CXX object CMakeFiles/Patternspace.dir/source/update/UpdateCheck.cpp.o
+[36/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_gui_extra/juce_gui_extra.cpp.o
+[37/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_processors/juce_audio_processors.cpp.o
+[38/86] Building CXX object CMakeFiles/PatternspaceTests.dir/_deps/juce-src/modules/juce_core/juce_core.cpp.o
+[39/86] Building C object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_graphics/juce_graphics_Sheenbidi.c.o
+[40/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_events/juce_events.cpp.o
+[41/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_graphics/juce_graphics.cpp.o
+[42/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_core/juce_core_CompilationTime.cpp.o
+[43/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_data_structures/juce_data_structures.cpp.o
+[44/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_core/juce_core.cpp.o
+[45/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_graphics/juce_graphics_Harfbuzz.cpp.o
+[46/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_basics/juce_audio_basics.cpp.o
+[47/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.cpp.o
+In file included from /home/claude/patternspace/build/_deps/juce-src/modules/juce_core/system/juce_StandardHeader.h:95,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_core/juce_core.h:215,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_graphics/juce_graphics.h:67,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.h:68,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.cpp:55:
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_core/system/juce_PlatformDefs.h:292:38: note: '#pragma message: This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored'
+  292 |  #define JUCE_COMPILER_WARNING(msg)  _Pragma (JUCE_STRINGIFY (message (msg)))
+      |                                      ^~~~~~~
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_gui_basics/juce_gui_basics.cpp:61:2: note: in expansion of macro 'JUCE_COMPILER_WARNING'
+   61 |  JUCE_COMPILER_WARNING ("This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored")
+      |  ^~~~~~~~~~~~~~~~~~~~~
+[48/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_AAX.cpp.o
+[49/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_AAX_utils.cpp.o
+[50/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_ARA.cpp.o
+[51/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_LV2.cpp.o
+[52/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_utils/juce_audio_utils.cpp.o
+[53/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_Unity.cpp.o
+[54/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST2.cpp.o
+[55/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp.o
+[56/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_AAX.cpp.o
+[57/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_AAX_utils.cpp.o
+[58/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_ARA.cpp.o
+[59/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_formats/juce_audio_formats.cpp.o
+[60/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_Standalone.cpp.o
+[61/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_Unity.cpp.o
+[62/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST2.cpp.o
+[63/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp.o
+[64/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_AAX.cpp.o
+[65/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_AAX_utils.cpp.o
+[66/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_ARA.cpp.o
+[67/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_LV2.cpp.o
+[68/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_Standalone.cpp.o
+[69/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_Unity.cpp.o
+[70/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST2.cpp.o
+[71/86] Building CXX object CMakeFiles/Patternspace.dir/_deps/juce-src/modules/juce_audio_devices/juce_audio_devices.cpp.o
+[72/86] Building CXX object CMakeFiles/PatternspaceFonts.dir/juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData1.cpp.o
+[73/86] Building CXX object CMakeFiles/PatternspaceFonts.dir/juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData2.cpp.o
+[74/86] Building CXX object CMakeFiles/PatternspaceFonts.dir/juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData3.cpp.o
+[75/86] Building CXX object CMakeFiles/PatternspaceFonts.dir/juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData4.cpp.o
+[76/86] Building CXX object CMakeFiles/PatternspaceFonts.dir/juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData5.cpp.o
+[77/86] Building CXX object CMakeFiles/PatternspaceFonts.dir/juce_binarydata_PatternspaceFonts/JuceLibraryCode/BinaryData6.cpp.o
+[78/86] Linking CXX static library libPatternspaceFonts.a
+[79/86] Linking CXX static library Patternspace_artefacts/Release/libPatternspace_SharedCode.a
+[80/86] Building CXX object CMakeFiles/Patternspace_Standalone.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_Standalone.cpp.o
+[81/86] Linking CXX executable PatternspaceTests_artefacts/Release/PatternspaceTests
+[82/86] Building CXX object CMakeFiles/Patternspace_LV2.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_LV2.cpp.o
+[83/86] Building CXX object CMakeFiles/Patternspace_VST3.dir/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp.o
+In file included from /home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp:68:
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_plugin_client/VST3/juce_VST3ModuleInfo.h: In instantiation of 'Steinberg::tresult juce::JucePluginFactoryBase::getPClassInfo(Steinberg::int32, PClassInfoTargetType*, PClassInfoSourceType ClassEntry::*) [with PClassInfoTargetType = Steinberg::PClassInfo; PClassInfoSourceType = Steinberg::PClassInfo2; Steinberg::tresult = int; Steinberg::int32 = int]':
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_plugin_client/VST3/juce_VST3ModuleInfo.h:194:30:   required from here
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_plugin_client/VST3/juce_VST3ModuleInfo.h:363:21: warning: 'void* memcpy(void*, const void*, size_t)' copying an object of non-trivial type 'struct Steinberg::PClassInfo' from an array of 'const struct Steinberg::PClassInfo2' [-Wclass-memaccess]
+  363 |         std::memcpy (info, &(getClassEntry (index).*source), sizeof (*info));
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_processors/format_types/VST3_SDK/pluginterfaces/base/coreiids.cpp:19,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_processors/format_types/juce_VST3Headers.h:167,
+                 from /home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp:51:
+/home/claude/patternspace/build/_deps/juce-src/modules/juce_audio_processors/format_types/VST3_SDK/pluginterfaces/base/ipluginbase.h:124:8: note: 'struct Steinberg::PClassInfo' declared here
+  124 | struct PClassInfo
+      |        ^~~~~~~~~~
+[84/86] Linking CXX shared module Patternspace_artefacts/Release/LV2/Patternspace.lv2/libPatternspace.so
+lto-wrapper: warning: using serial compilation of 80 LTRANS jobs
+lto-wrapper: note: see the '-flto' option documentation for more information
+[85/86] Linking CXX executable Patternspace_artefacts/Release/Standalone/Patternspace
+lto-wrapper: warning: using serial compilation of 84 LTRANS jobs
+lto-wrapper: note: see the '-flto' option documentation for more information
+[86/86] Linking CXX shared module Patternspace_artefacts/Release/VST3/Patternspace.vst3/Contents/x86_64-linux/Patternspace.so
+lto-wrapper: warning: using serial compilation of 82 LTRANS jobs
+lto-wrapper: note: see the '-flto' option documentation for more information
+removing moduleinfo.json
+creating /home/claude/patternspace/build/Patternspace_artefacts/Release/VST3/Patternspace.vst3
+EXIT=0

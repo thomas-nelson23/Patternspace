@@ -112,6 +112,7 @@ void testReferenceRun()
 
         ps::Engine engine;
         engine.load (preset.patch);
+        engine.setProbabilityMode (ps::Engine::ProbabilityMode::stream); // the prototype's one stream
         engine.setRandomSeed (seed);
         ps::StepOutput out;
         int mismatches = 0;
@@ -193,6 +194,91 @@ void testLocate()
     }
 }
 
+// Probability decides from the song position: two engines agree, and so does one after a jump.
+void testDeterministicProbability()
+{
+    ps::Graph g;
+    auto clk = ps::makeNode ("clock", "clk", 0, 0);
+    auto p = ps::makeNode ("prob", "p", 0, 0);
+    p.set ("chance", 5);
+    g.nodes = { clk, p };
+    g.links = { { "clk", 0, "p", 0 } };
+    ps::normalise (g);
+
+    auto run = [&] (int from, int to, bool jump) {
+        ps::Engine e;
+        e.load (g);
+        if (jump)
+            e.locate (from);
+        juce::String s;
+        ps::StepOutput o;
+        for (int i = from; i < to; ++i)
+        {
+            o.clear();
+            e.step (i, o);
+            s += juce::String (e.valuesAt ("p"));
+        }
+        return s;
+    };
+    const auto whole = run (0, 64, false);
+    checkEq (run (0, 64, false), whole, "two engines make the same choices");
+    checkEq (run (32, 64, true), whole.substring (32), "a jump to bar 3 makes the choices bar 3 always makes");
+    check (whole.containsChar ('1') && whole.containsChar ('0'), "a 50% chance plays some steps and skips others");
+
+    g.settings["seed"] = 99;
+    check (run (0, 64, false) != whole, "a different patch seed makes different choices");
+}
+
+// The Clock's bar outputs follow the host's meter; the follow setting decides what a jump does.
+void testMeterAndFollow()
+{
+    ps::Graph g;
+    auto clk = ps::makeNode ("clock", "clk", 0, 0);
+    auto e = ps::makeNode ("euclid", "e", 0, 0);
+    e.set ("len", 7);
+    e.set ("hits", 1);
+    g.nodes = { clk, e };
+    g.links = { { "clk", 0, "e", 0 }, { "clk", 1, "e", 1 } };
+    ps::normalise (g);
+
+    ps::Engine engine;
+    engine.load (g);
+    engine.setMeter (12, 0); // 3/4
+    ps::StepOutput o;
+    juce::String bars;
+    for (int i = 0; i < 24; ++i)
+    {
+        o.clear();
+        engine.step (i, o);
+        bars += juce::String (engine.view()[0].out[1]);
+    }
+    checkEq (bars, juce::String ("100000000000100000000000"), "in 3/4 the bar output fires every 12 sixteenths");
+    engine.setMeter (16, 8); // bar 1 starts on step 8
+    o.clear();
+    engine.step (24, o);
+    checkEq (engine.view()[0].out[1], 1, "a bar start that isn't step 0 is respected");
+
+    // Phrase: an 11-step pattern re-phases at a jump. Free: it keeps counting.
+    auto phase = [&] (int follow) {
+        g.settings["follow"] = follow;
+        g.links = { { "clk", 0, "e", 0 } };
+        g.find ("e")->set ("len", 11);
+        ps::Engine x;
+        x.load (g);
+        for (int i = 0; i < 10; ++i)
+        {
+            o.clear();
+            x.step (i, o);
+        }
+        x.locate (40);
+        return x.view()[1].pos;
+    };
+    checkEq (phase (0), 7, "phrase mode replays from step 32: 8 steps in, position 7");
+    checkEq (phase (1), 39 % 11, "song mode replays from bar 1: position 39 mod 11");
+    checkEq (phase (2), 9, "free mode keeps the position it had");
+    g.settings.erase ("follow");
+}
+
 void testJsonRoundTrip()
 {
     for (auto& p : factoryPresets())
@@ -210,6 +296,9 @@ void testJsonRoundTrip()
                && legacy.nodes[0].lanes[0].name == "Hat",
            "an old one-note MIDI out becomes a one-output MIDI out");
     check (legacy.pages.size() == 1 && legacy.nodes[0].page == "p1", "a patch without tabs gets one");
+    check (legacy.settings.count ("follow") && legacy.settings["follow"] == 0 && legacy.settings["seed"] == 1234,
+           "a version 1 file gets the settings version 2 added");
+    check (ps::json::toString (legacy).contains ("\"v\": 2"), "saved files carry the format version");
 
     ps::Graph junk;
     check (! ps::json::fromString ("not json", junk), "garbage is rejected");
@@ -416,6 +505,8 @@ int main()
     testReferenceRun();
     testMidiOutput();
     testLocate();
+    testDeterministicProbability();
+    testMeterAndFollow();
     testJsonRoundTrip();
     testEditing();
     testTagsAndFeedback();

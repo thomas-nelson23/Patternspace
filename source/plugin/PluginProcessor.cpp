@@ -113,7 +113,8 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // Follow the host's transport when it has one and sync is on; otherwise run our own clock.
     const double sr = getSampleRate() > 0 ? getSampleRate() : 44100.0;
     bool hostKnown = false, playing = false;
-    double ppq = 0, bpm = bpmParam->load();
+    double ppq = 0, bpm = bpmParam->load(), barStartPpq = 0;
+    int num = 4, den = 4;
     if (syncParam->load() > 0.5f)
         if (auto* head = getPlayHead())
             if (auto pos = head->getPosition())
@@ -124,7 +125,19 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     ppq = *p;
                     if (auto b = pos->getBpm())
                         bpm = *b;
+                    if (auto sig = pos->getTimeSignature())
+                    {
+                        num = std::max (1, sig->numerator);
+                        den = std::max (1, sig->denominator);
+                    }
+                    if (auto bar = pos->getPpqPositionOfLastBarStart())
+                        barStartPpq = *bar;
                 }
+    meterNum = num;
+    meterDen = den;
+    // Sixteenths per bar, and the sixteenth bar 1 falls on: 3/4 is 12 steps, 7/8 is 14.
+    const int stepsPerBar = std::max (1, (int) std::lround (num * 16.0 / den));
+    const auto barStartStep = (std::int64_t) std::llround (barStartPpq * 4.0);
     bpm = juce::jlimit (20.0, 999.0, bpm);
     const double samplesPerBeat = sr * 60.0 / bpm;
     if (! hostKnown)
@@ -149,9 +162,13 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const int gate = std::max (1, (int) (samplesPerBeat / 8.0)); // half a sixteenth
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (engine)
+        {
+            engine->setMeter (stepsPerBar, barStartStep);
             for (auto k = (std::int64_t) std::ceil (start - 1.0e-7); (double) k < end - 1.0e-7; ++k)
             {
                 const int offset = juce::jlimit (0, n - 1, (int) std::lround ((k - start) / 4.0 * samplesPerBeat));
+                if (resetRequested.exchange (false))
+                    engine->resetState(); // and the locate below re-phases from the patch's follow point
                 if (! wasPlaying || engine->lastStep() != k - 1)
                     engine->locate (k); // started, looped or jumped: get the generators back in phase
                 wasPlaying = true;
@@ -173,10 +190,13 @@ void PatternspaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                         midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), offset + gate);
                     else if (numPending < (int) pendingOffs.size())
                         pendingOffs[(size_t) numPending++] = { note.channel, note.note, offset + gate - n };
+                    else // the queue is full: a short note beats a stuck one
+                        midi.addEvent (juce::MidiMessage::noteOff (note.channel, note.note), n - 1);
                 }
                 for (auto& hit : stepOut.hits)
                     sampler.trigger (hit, offset);
             }
+        }
         wasPlaying = true;
     }
     running = playing;

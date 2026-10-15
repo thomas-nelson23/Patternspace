@@ -489,6 +489,11 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     addAndMakeVisible (playButton);
     syncButton.setTooltip ("Follow the host's tempo and transport when it has one");
     addAndMakeVisible (syncButton);
+    resetButton.setTooltip ("Put every generator back to the start of the phrase, as if a reset arrived on every rst input");
+    resetButton.onClick = [this] { processor.requestReset(); };
+    addAndMakeVisible (resetButton);
+    // The standalone app has no host to follow, so the switch would only confuse.
+    syncButton.setVisible (processor.wrapperType != juce::AudioProcessor::wrapperType_Standalone);
 
     tempoSlider.setSliderStyle (juce::Slider::LinearBar);
     tempoSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -526,6 +531,8 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     processor.addChangeListener (this);
     refreshPresets();
     refreshZoom();
+    refreshTransport();
+    startTimerHz (4);
 
     setResizable (true, true);
     setResizeLimits (900, 560, 4000, 3000);
@@ -569,11 +576,16 @@ void PatternspaceEditor::resized()
     top.removeFromLeft (6);
     updatesButton.setBounds (top.removeFromLeft (updater != nullptr && updater->updateAvailable() ? 150 : 86));
 
-    syncButton.setBounds (top.removeFromRight (100));
-    top.removeFromRight (6);
+    if (syncButton.isVisible())
+    {
+        syncButton.setBounds (top.removeFromRight (100));
+        top.removeFromRight (6);
+    }
     tempoSlider.setBounds (top.removeFromRight (124));
     top.removeFromRight (6);
     playButton.setBounds (top.removeFromRight (72));
+    top.removeFromRight (6);
+    resetButton.setBounds (top.removeFromRight (64));
 
     auto tabRow = r.removeFromTop (tabRowH);
     auto zoom = tabRow.removeFromRight (200).withTrimmedRight (16).withSizeKeepingCentre (184, ps::theme::controlH).withY (tabRow.getBottom() - ps::theme::controlH - 5);
@@ -607,6 +619,27 @@ void PatternspaceEditor::refreshPresets()
             return;
         }
     presetBox.setText (processor.patchName(), juce::dontSendNotification);
+}
+
+void PatternspaceEditor::timerCallback() { refreshTransport(); }
+
+void PatternspaceEditor::refreshTransport()
+{
+    const bool host = processor.isFollowingHost();
+    for (auto* c : { static_cast<juce::Component*> (&playButton), static_cast<juce::Component*> (&tempoSlider) })
+    {
+        if (c->isEnabled() == ! host)
+            continue;
+        c->setEnabled (! host);
+        c->setAlpha (host ? 0.45f : 1.0f);
+    }
+    const auto tip = host ? "The host's transport and tempo drive the clock while Host sync is on" : "Tempo of the internal clock";
+    if (tempoSlider.getTooltip() != tip)
+    {
+        tempoSlider.setTooltip (tip);
+        playButton.setTooltip (host ? "The host's transport drives the clock while Host sync is on"
+                                    : "Runs the internal clock when the host isn't driving it (and always in the standalone app)");
+    }
 }
 
 void PatternspaceEditor::refreshZoom() { zoomLabel.setText (juce::String (juce::roundToInt (canvas.zoom() * 100)) + "%", juce::dontSendNotification); }

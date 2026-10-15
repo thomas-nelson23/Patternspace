@@ -74,5 +74,19 @@ namespace
     }
 } // namespace
 
-void normalise (Graph& g) { normaliseGraph (g, true); }
+void normalise (Graph& g)
+{
+    normaliseGraph (g, true);
+    // Version 1 files (the prototype's, and 0.2.0's) have no settings. Each later version adds
+    // its own upgrade here, keyed on the version the file was written with.
+    const int from = g.settings.count ("_v") ? g.settings["_v"] : kPatchFormatVersion;
+    g.settings.erase ("_v");
+    if (from < 2)
+    {
+        g.settings.emplace ("follow", 0);
+        g.settings.emplace ("seed", 1234);
+    }
+    g.settings.emplace ("follow", 0);
+    g.settings.emplace ("seed", 1234);
+}
 } // namespace ps

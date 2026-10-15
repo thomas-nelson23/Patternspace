@@ -60,13 +60,38 @@ public:
     // Evaluates step `index`, counted in sixteenths from the start of bar 1, appending what it plays.
     void step (std::int64_t index, StepOutput& out);
 
-    // Jumps to `index` as if the patch had been playing since the last two-bar boundary, so the
-    // generators are in phase. Nothing is output for the replayed steps.
+    // Jumps to `index` so the generators are in phase, replaying silently from where the patch's
+    // follow setting says: the last two-bar phrase (the default), the start of the song, or, when
+    // free-running, nowhere (the generators keep their state across the jump).
     void locate (std::int64_t index);
     void resetState();
 
+    // How the patch lines up with the song position when playback starts or jumps.
+    enum class Follow
+    {
+        phrase, // replay from the last two-bar boundary
+        song,   // replay from bar 1, so every step is a pure function of the song position
+        free    // never reset: the generators run on from wherever they were
+    };
+    Follow follow() const;
+    static Follow followFromSetting (int value);
+
+    // The host's meter: sixteenths per bar and the step bar 1 starts on. The Clock's bar and
+    // 2-bar outputs follow it. Safe on the audio thread.
+    void setMeter (int stepsPerBar, std::int64_t barStartStep);
+
     std::int64_t lastStep() const;
-    void setRandomSeed (std::uint32_t seed); // the stream the Probability modules draw from
+
+    // Probability modules decide from the step index, the module and the patch's seed, so a song
+    // position always makes the same choice (and a bounce matches playback). The prototype's
+    // single running stream is kept for the parity test.
+    enum class ProbabilityMode
+    {
+        position,
+        stream
+    };
+    void setProbabilityMode (ProbabilityMode mode);
+    void setRandomSeed (std::uint32_t seed); // seeds both modes
 
     // What each module of the graph being shown is doing after the last step, in patch order, for
     // drawing. That graph is the root patch unless setViewPath() has opened a subsystem.

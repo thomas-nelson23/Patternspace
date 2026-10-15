@@ -87,12 +87,15 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
     if (k == "clock")
     {
         add (ItemType::bigText, 18, "bpm");
-        add (ItemType::text, 12, {}, "16ths, bars, phrases");
+        add (ItemType::text, 12, {}, "On play or a jump, line up with:");
+        add (ItemType::modes, 18, "follow");
     }
     else if (k == "euclid" || k == "random")
     {
         steppers();
-        add (ItemType::cells, 10, "pattern");
+        if (k == "random")
+            add (ItemType::button, 18, "reroll", "Reroll");
+        add (ItemType::cells, n.get ("len", 16) > 32 ? 21.0f : 10.0f, "pattern");
     }
     else if (k == "ca")
     {
@@ -455,6 +458,13 @@ void PatchCanvas::paintCrumbs (juce::Graphics& g)
 
 void PatchCanvas::resized() {}
 
+int PatchCanvas::settingOf (const char* key) const
+{
+    const auto& settings = processor.patch().settings;
+    const auto it = settings.find (key);
+    return it == settings.end() ? 0 : it->second;
+}
+
 void PatchCanvas::timerCallback()
 {
     if (! pathIsValid())
@@ -514,7 +524,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 break;
             case ItemType::modes:
             {
-                const int count = it.key == "combine" ? (int) ps::combineModes().size() : 2;
+                const int count = it.key == "combine" ? (int) ps::combineModes().size() : it.key == "follow" ? 3 : 2;
                 for (int m = 0; m < count; ++m)
                     L.zones.push_back ({ { it.r.getX() + it.r.getWidth() * m / count, it.r.getY(), it.r.getWidth() / count, it.r.getHeight() }, ZoneType::mode, it.key, m });
                 break;
@@ -531,7 +541,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 L.zones.push_back ({ it.r.withTrimmedLeft (it.r.getWidth() / 2), ZoneType::sample, {}, 1 });
                 break;
             case ItemType::button:
-                L.zones.push_back ({ it.r, it.key == "open" ? ZoneType::open : ZoneType::addPort, {}, 0 });
+                L.zones.push_back ({ it.r, it.key == "open" ? ZoneType::open : it.key == "reroll" ? ZoneType::reroll : ZoneType::addPort, {}, 0 });
                 break;
             case ItemType::text:
             case ItemType::bigText:
@@ -806,11 +816,15 @@ void PatchCanvas::paintCells (juce::Graphics& g, juce::Rectangle<float> r, const
     const int count = (int) cells.size();
     if (count == 0)
         return;
-    const float gap = count > 20 ? 1.0f : 2.0f;
-    const float cw = (r.getWidth() - gap * (count - 1)) / count;
+    // Up to 32 cells in one row; longer patterns take two rows.
+    const int perRow = count > 32 ? (count + 1) / 2 : count;
+    const int rows = count > 32 ? 2 : 1;
+    const float gap = perRow > 20 ? 1.0f : 2.0f;
+    const float cw = (r.getWidth() - gap * (perRow - 1)) / perRow;
+    const float ch = (r.getHeight() - gap * (rows - 1)) / rows;
     for (int i = 0; i < count; ++i)
     {
-        const juce::Rectangle<float> cell (r.getX() + i * (cw + gap), r.getY(), cw, r.getHeight());
+        const juce::Rectangle<float> cell (r.getX() + (i % perRow) * (cw + gap), r.getY() + (i / perRow) * (ch + gap), cw, ch);
         const int v = cells[(size_t) i];
         if (v > 0)
             g.setColour (c.withAlpha (i == now ? 1.0f : (v > 1 ? 0.85f : 0.45f)));
@@ -997,7 +1011,9 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 drawValue (g, juce::String (processor.currentTempo(), 1) + " BPM", r, juce::Justification::centredLeft);
                 g.setColour (textDim);
                 g.setFont (mono (9.5f));
-                g.drawText (processor.isFollowingHost() ? "host" : "internal", r, juce::Justification::centredRight);
+                g.drawText (juce::String (processor.meterNumerator()) + "/" + juce::String (processor.meterDenominator())
+                                + (processor.isFollowingHost() ? "  host" : "  internal"),
+                            r, juce::Justification::centredRight);
                 break;
             }
             case ItemType::stepper:
@@ -1032,19 +1048,22 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
             }
             case ItemType::modes:
             {
-                const bool combine = it.key == "combine";
+                const bool combine = it.key == "combine", follow = it.key == "follow";
                 const auto& modes = ps::combineModes();
-                const int count = combine ? (int) modes.size() : 2;
+                const int count = combine ? (int) modes.size() : follow ? 3 : 2;
                 const int ways = n.get ("ways", 4);
+                const int followNow = settingOf ("follow");
+                static const char* followNames[] = { "Phrase", "Song", "Free" };
                 for (int m = 0; m < count; ++m)
                 {
                     const auto b = juce::Rectangle<float> (r.getX() + r.getWidth() * m / count, r.getY(), r.getWidth() / count, r.getHeight()).reduced (1, 0);
-                    const bool on = combine ? n.mode == modes[(size_t) m] : (m == 0) == (n.mode != "merge");
+                    const bool on = combine ? n.mode == modes[(size_t) m] : follow ? m == followNow : (m == 0) == (n.mode != "merge");
                     paintSegment (g, b, on, c);
                     g.setColour (on ? onAccent : textSoft);
                     g.setFont (sans (9.5f, on ? Weight::semibold : Weight::regular));
                     const juce::String arrow = juce::String::fromUTF8 (" \xE2\x86\x92 ");
                     const auto caption = combine ? u8 (modes[(size_t) m])
+                                       : follow  ? juce::String (followNames[m])
                                                  : (m == 0 ? "1" + arrow + juce::String (ways) : juce::String (ways) + arrow + "1");
                     g.drawText (caption, b, juce::Justification::centred);
                 }
@@ -1637,6 +1656,13 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
             changed = ps::stepParam (patch, n, z.key, z.value);
             break;
         case ZoneType::mode:
+            if (z.key == "follow")
+            {
+                auto& settings = processor.patch().settings;
+                changed = settings["follow"] != z.value;
+                settings["follow"] = z.value;
+                break;
+            }
             if (z.key == "combine")
                 n.mode = ps::combineModes()[(size_t) z.value];
             else
@@ -1686,6 +1712,17 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
         case ZoneType::open:
             openSubsystem (n.id);
             return;
+        case ZoneType::reroll:
+        {
+            // A fresh seed that isn't the current one.
+            const int before = n.get ("seed", 90);
+            int seed = before;
+            while (seed == before)
+                seed = juce::Random::getSystemRandom().nextInt (juce::Range<int> (1, 10000));
+            n.set ("seed", seed);
+            changed = true;
+            break;
+        }
         case ZoneType::addPort:
             addPort (n.kind == "subout");
             return;
@@ -1953,7 +1990,7 @@ void PatchCanvas::showNodeMenu (int index)
     if (n.kind != "subin" && n.kind != "subout")
     {
         menu.addSeparator();
-        menu.addItem (selection.size() > 1 ? "Delete cyan modules" : "Delete", [this] { deleteSelection(); });
+        menu.addItem (selection.size() > 1 ? "Delete " + juce::String ((int) selection.size()) + " modules" : "Delete", [this] { deleteSelection(); });
     }
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }

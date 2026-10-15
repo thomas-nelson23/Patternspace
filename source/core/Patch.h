@@ -87,12 +87,19 @@ struct Graph
     std::vector<Block> blocks;
     std::vector<Note> notes;
     std::map<std::string, std::string> tagColours; // patch-wide colour per tag name
+    // Patch-wide settings on the root graph: "follow" (0 phrase, 1 song, 2 free, see
+    // Engine::Follow), "seed" (what Probability modules decide from), "swing" later.
+    std::map<std::string, int> settings;
 
     int indexOf (const std::string& id) const;
     Node* find (const std::string& id);
     const Node* find (const std::string& id) const;
     std::string freshId (const std::string& prefix) const;
 };
+
+// The patch file format version written by this build. Files without one are version 1 (the
+// prototype's format); normalise() upgrades older files as they load.
+constexpr int kPatchFormatVersion = 2;
 
 // Fills in what older or hand-written patches leave out: a first tab, default parameters, and
 // MIDI outs saved before they had several outputs. Applies to subsystems too.
