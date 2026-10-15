@@ -20,7 +20,7 @@ namespace
             { "euclid", "Euclidean", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
             { "random", "Random", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
             { "ca", "Cellular", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "grids", "Drum map", 0x2ad4ff, { "clk", "rst" }, { "kick", "snare", "hat" }, {}, {}, 220, false },
+            { "grids", "Drum map", 0x2ad4ff, { "clk", "rst" }, { "kick", "snare", "hat" }, {}, {}, 250, false },
             { "step", "Step grid", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
             { "div", "Clock divider", 0x6f858e, { "clk", "rst" }, { "out" }, {}, {}, 150, false },
             { "accent", "Accent", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
@@ -510,4 +510,132 @@ const std::vector<std::string>& sampleNames()
     static const std::vector<std::string> s { "909 Kick", "Crack Snare", "Tight Hat", "Clap", "Rim", "Low Tom" };
     return s;
 }
+
+Grouped groupIntoSubsystem (Graph& patch, const std::set<std::string>& ids, const std::string& name, double x, double y, double width)
+{
+    Grouped result;
+    std::set<std::string> moving;
+    for (auto& n : patch.nodes)
+        if (ids.count (n.id) && n.kind != "subin" && n.kind != "subout")
+            moving.insert (n.id);
+    if (moving.empty())
+        return result;
+    auto sub = makeSubsystem (patch.freshId ("sub"), name, std::round (x), std::round (y));
+    const std::string inId = subsystemInputs (sub)->id, outId = subsystemOutputs (sub)->id;
+    auto& inner = sub.inner.front();
+    const double dx = 200.0 - x, dy = 60.0 - y;
+
+    // Each outside port that feeds the group becomes one input; each inside port heard outside
+    // becomes one output. The same port is reused for every wire it carries.
+    std::map<std::pair<std::string, int>, int> inPorts, outPorts;
+    std::vector<Link> outerLinks, innerLinks;
+    auto uniquePort = [&] (bool output, const std::string& base) {
+        const auto names = output ? outputsOf (sub) : inputsOf (sub);
+        auto candidate = base;
+        for (int i = 2; std::find (names.begin(), names.end(), candidate) != names.end(); ++i)
+            candidate = base + " " + std::to_string (i);
+        return candidate;
+    };
+    auto inputFor = [&] (const Node& from, int p, const std::string& label) {
+        const auto key = std::make_pair (from.id, p);
+        if (auto it = inPorts.find (key); it != inPorts.end())
+            return it->second;
+        addSubsystemPort (sub, false, uniquePort (false, label), outputType (from, p));
+        const int idx = (int) inputsOf (sub).size() - 1;
+        inPorts[key] = idx;
+        outerLinks.push_back ({ from.id, p, sub.id, idx });
+        return idx;
+    };
+    auto outputFor = [&] (const Node& from, int p) {
+        const auto key = std::make_pair (from.id, p);
+        if (auto it = outPorts.find (key); it != outPorts.end())
+            return it->second;
+        const auto outs = outputsOf (from);
+        addSubsystemPort (sub, true, uniquePort (true, p < (int) outs.size() ? outs[(size_t) p] : "out"), outputType (from, p));
+        const int idx = (int) outputsOf (sub).size() - 1;
+        outPorts[key] = idx;
+        innerLinks.push_back ({ from.id, p, outId, idx });
+        return idx;
+    };
+    for (auto& l : patch.links)
+    {
+        const bool aIn = moving.count (l.a) > 0, bIn = moving.count (l.b) > 0;
+        const auto *a = patch.find (l.a), *b = patch.find (l.b);
+        if (! a || ! b)
+            continue;
+        if (aIn && bIn)
+            innerLinks.push_back (l);
+        else if (bIn)
+        {
+            const auto ins = inputsOf (*b);
+            innerLinks.push_back ({ inId, inputFor (*a, l.p, l.q < (int) ins.size() ? ins[(size_t) l.q] : "in"), l.b, l.q });
+        }
+        else if (aIn)
+            outerLinks.push_back ({ sub.id, outputFor (*a, l.p), l.b, l.q });
+        else
+            outerLinks.push_back (l);
+    }
+    for (auto& n : patch.nodes)
+    {
+        if (! moving.count (n.id))
+            continue;
+        for (auto it = n.tagIn.begin(); it != n.tagIn.end();)
+        {
+            const Node* owner = nullptr;
+            int ownerPort = -1;
+            for (auto& m : patch.nodes)
+                if (! moving.count (m.id))
+                    for (auto& [p, t] : m.tagOut)
+                        if (t == it->second)
+                        {
+                            owner = &m;
+                            ownerPort = p;
+                        }
+            // A wire into the same input would already win over the tag, so it keeps its place.
+            const bool wired = std::any_of (innerLinks.begin(), innerLinks.end(), [&] (const Link& l) { return l.b == n.id && l.q == it->first; });
+            if (owner != nullptr && ! wired && outputType (*owner, ownerPort) == inputType (n, it->first))
+            {
+                innerLinks.push_back ({ inId, inputFor (*owner, ownerPort, it->second), n.id, it->first });
+                it = n.tagIn.erase (it);
+                ++result.tags;
+            }
+            else
+                ++it;
+        }
+        for (auto it = n.tagOut.begin(); it != n.tagOut.end();)
+        {
+            const bool heardOutside = std::any_of (patch.nodes.begin(), patch.nodes.end(), [&] (const Node& m) {
+                return ! moving.count (m.id) && std::any_of (m.tagIn.begin(), m.tagIn.end(), [&] (auto& kv) { return kv.second == it->second; });
+            });
+            if (heardOutside)
+            {
+                sub.tagOut[outputFor (n, it->first)] = it->second;
+                it = n.tagOut.erase (it);
+                ++result.tags;
+            }
+            else
+                ++it;
+        }
+    }
+    for (auto& n : patch.nodes)
+        if (moving.count (n.id))
+        {
+            auto copy = n;
+            copy.x = std::round (copy.x + dx);
+            copy.y = std::round (copy.y + dy);
+            copy.page.clear();
+            inner.nodes.push_back (std::move (copy));
+        }
+    if (auto* out = inner.find (outId))
+        out->x = std::round (200.0 + width + 80.0);
+    inner.links = std::move (innerLinks);
+    patch.nodes.erase (std::remove_if (patch.nodes.begin(), patch.nodes.end(), [&] (const Node& n) { return moving.count (n.id) > 0; }), patch.nodes.end());
+    patch.links = std::move (outerLinks);
+    result.id = sub.id;
+    result.inputs = (int) inputsOf (sub).size();
+    result.outputs = (int) outputsOf (sub).size();
+    patch.nodes.push_back (std::move (sub));
+    return result;
+}
+
 } // namespace ps

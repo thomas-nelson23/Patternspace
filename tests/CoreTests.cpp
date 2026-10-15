@@ -456,6 +456,77 @@ void testNewSubsystem()
     checkEq ((int) sub->inner.front().links.size(), 1, "a gate wire into a port that became audio is dropped");
 }
 
+
+// Grouping a selection into a subsystem keeps the patch playing the same: wires and tags that
+// cross the new edge become ports.
+void testGroupIntoSubsystem()
+{
+    ps::Graph g;
+    g.pages = { { "p1", "A" } };
+    auto clk = ps::makeNode ("clock", "clk", 0, 0);
+    clk.tagOut[0] = "CLK";
+    auto e = ps::makeNode ("euclid", "e", 200, 0); // hears the clock by tag
+    e.set ("hits", 5);
+    e.set ("len", 8);
+    e.tagIn[0] = "CLK";
+    auto p = ps::makeNode ("prob", "p", 400, 0); // wired from e; its output is tagged for two listeners
+    p.set ("chance", 10);
+    p.tagOut[0] = "HITS";
+    auto a = ps::makeNode ("accent", "a", 600, 0);
+    a.tagIn[0] = "HITS";
+    auto b = ps::makeNode ("accent", "b", 600, 100);
+    b.tagIn[0] = "HITS";
+    auto d = ps::makeNode ("div", "d", 600, 200); // wired straight from p
+    g.nodes = { clk, e, p, a, b, d };
+    g.links = { { "e", 0, "p", 0 }, { "p", 0, "d", 0 } };
+    for (auto& n : g.nodes)
+        n.page = "p1";
+
+    auto play = [] (const ps::Graph& graph) {
+        ps::Engine engine;
+        engine.load (graph);
+        juce::String trace;
+        for (int s = 0; s < 32; ++s)
+        {
+            ps::StepOutput o;
+            engine.step (s, o);
+            trace += juce::String (engine.valuesAt ("a")) + juce::String (engine.valuesAt ("b")) + juce::String (engine.valuesAt ("d")) + ",";
+        }
+        return trace;
+    };
+    const auto before = play (g);
+    check (before.contains ("1"), "the patch plays before grouping");
+
+    const auto r = ps::groupIntoSubsystem (g, { "e", "p" }, "Engine", 200, 0, 350);
+    check (! r.id.empty(), "the group has an id");
+    checkEq (r.inputs, 1, "the clock tag became one input");
+    checkEq (r.outputs, 1, "the hit output serves the wire and both tag listeners");
+    checkEq (r.tags, 2, "two tags crossed the edge: CLK in, HITS out");
+    checkEq ((int) g.nodes.size(), 5, "clock, subsystem, two accents and the divider remain outside");
+    const auto* sub = g.find (r.id);
+    check (sub != nullptr && sub->kind == "sub", "the subsystem is in the patch");
+    checkEq (juce::String (sub->name), juce::String ("Engine"), "named as asked");
+    checkEq (juce::String (sub->tagOut.at (0)), juce::String ("HITS"), "the subsystem's output took over the tag");
+    checkEq ((int) sub->inner.front().nodes.size(), 4, "Inputs, Outputs, Euclidean and Probability inside");
+    check (sub->inner.front().find ("e")->tagIn.empty(), "the inner Euclidean no longer tags, it is wired from Inputs");
+    bool wireIn = false, wireOut = false;
+    for (auto& l : g.links)
+    {
+        wireIn = wireIn || (l.a == "clk" && l.b == r.id);
+        wireOut = wireOut || (l.a == r.id && l.b == "d");
+    }
+    check (wireIn, "the clock is wired into the subsystem");
+    check (wireOut, "the subsystem is wired on to the divider");
+    checkEq (play (g), before, "the patch plays exactly as before");
+
+    ps::normalise (g);
+    ps::Graph copy;
+    check (ps::json::fromString (ps::json::toString (g), copy), "a grouped patch saves and loads");
+    checkEq (play (copy), before, "and still plays the same after a round trip");
+
+    checkEq ((int) ps::groupIntoSubsystem (g, { "nope" }, "Empty", 0, 0, 0).id.size(), 0, "grouping nothing does nothing");
+}
+
 // The editor draws an open subsystem from the engine's view of the graph inside it.
 void testSubsystemView()
 {
@@ -554,6 +625,7 @@ int main()
     testTagsAndFeedback();
     testSubsystemView();
     testNewSubsystem();
+    testGroupIntoSubsystem();
     testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";

@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
+
 #include <cstdint>
 
 // Colours, type and metrics from the Home Dashboard's Deep Ocean look: one flat deep-blue field,
@@ -77,13 +79,22 @@ inline juce::Font caps (float size, float tracking = 0.18f) { return sans (size,
 
 // Tags without a colour of their own get one from their name. The palette keeps to the look's
 // neon on deep blue, and leaves out amber, which is kept for warnings.
+struct Swatch
+{
+    const char* name;
+    std::uint32_t rgb;
+};
+inline const std::array<Swatch, 8>& swatches()
+{
+    static const std::array<Swatch, 8> list { { { "Cyan", 0x2ad4ff }, { "Red", 0xff2a4f }, { "Pink", 0xff6ad5 }, { "Violet", 0x9d8cff }, { "Slate", 0x9cc7cf }, { "Mint", 0x4dffb8 }, { "Coral", 0xff8f6b }, { "White", 0xd9eef2 } } };
+    return list;
+}
 inline juce::Colour hashedTagColour (const std::string& tag)
 {
-    static const std::uint32_t palette[] = { 0x2ad4ff, 0xff2a4f, 0xff6ad5, 0x9d8cff, 0x9cc7cf, 0x4dffb8, 0xff8f6b, 0xd9eef2 };
     std::uint32_t h = 0;
     for (char c : tag)
         h = h * 31 + (std::uint32_t) (unsigned char) c;
-    return rgb (palette[h % 8]);
+    return rgb (swatches()[h % 8].rgb);
 }
 
 // An LED: a small dot with a soft glow, or a hollow ring when off.

@@ -41,51 +41,6 @@ void drawBrand (juce::Graphics& g, juce::Rectangle<float> area)
 
 class PatternspaceEditor::Library : public juce::Component
 {
-public:
-    Library (PatchCanvas& c, std::function<void()> importFromFile) : canvas (c), onImport (std::move (importFromFile))
-    {
-        rebuild();
-        list.owner = this;
-        list.setSize (libraryW, height());
-        viewport.setViewedComponent (&list, false);
-        viewport.setScrollBarsShown (true, false);
-        viewport.setScrollBarThickness (6);
-        addAndMakeVisible (viewport);
-    }
-
-    void resized() override
-    {
-        viewport.setBounds (getLocalBounds());
-        list.setSize (viewport.getMaximumVisibleWidth(), height());
-    }
-
-    void paint (juce::Graphics& g) override { g.fillAll (ps::theme::bg); }
-
-    // Lists the modules, the factory subsystems and the user's saved subsystems again.
-    void rebuild()
-    {
-        rows.clear();
-        for (auto& section : ps::librarySections())
-        {
-            rows.push_back ({ section.title, {}, {}, -1, true });
-            for (auto& kind : section.kinds)
-                if (auto* info = ps::kindInfo (kind))
-                    rows.push_back ({ info->title, ps::theme::rgb (info->colour), kind, -1, false });
-        }
-        rows.push_back ({ "Subsystems", {}, {}, -1, true });
-        rows.push_back ({ "New subsystem", juce::Colours::transparentBlack, {}, -3, false });
-        const auto& subs = ps::presets::subsystems();
-        for (int i = 0; i < (int) subs.size(); ++i)
-            rows.push_back ({ subs[(size_t) i].name, ps::theme::text, {}, i, false });
-        userSubsystems = ps::library::subsystems();
-        for (int i = 0; i < (int) userSubsystems.size(); ++i)
-            rows.push_back ({ userSubsystems[(size_t) i].name, ps::theme::textSoft, {}, 1000 + i, false });
-        rows.push_back ({ "Add from file...", ps::theme::textDim, {}, -2, false });
-        list.setSize (std::max (1, viewport.getMaximumVisibleWidth()), height());
-        list.repaint();
-    }
-
-private:
     struct Row
     {
         juce::String text;
@@ -94,6 +49,117 @@ private:
         int subsystem = -1; // index into the factory subsystems, 1000+ the user's, -2 to read one from a file, -3 for a new one
         bool header = false;
     };
+
+public:
+    Library (PatchCanvas& c, std::function<void()> importFromFile) : canvas (c), onImport (std::move (importFromFile))
+    {
+        search.setFont (ps::theme::sans (12.5f));
+        search.setColour (juce::TextEditor::backgroundColourId, ps::theme::ink);
+        search.setColour (juce::TextEditor::textColourId, ps::theme::text);
+        search.setColour (juce::TextEditor::outlineColourId, ps::theme::hair);
+        search.setColour (juce::TextEditor::focusedOutlineColourId, ps::theme::cyan);
+        search.setTextToShowWhenEmpty ("Search modules", ps::theme::textDim);
+        search.setSelectAllWhenFocused (true);
+        search.onTextChange = [this] { rebuild(); };
+        search.onEscapeKey = [this] {
+            search.setText ({});
+            canvas.grabKeyboardFocus();
+        };
+        search.onReturnKey = [this] {
+            // Enter adds the first match.
+            for (auto& r : rows)
+                if (! r.header && (! r.kind.empty() || r.subsystem >= 0))
+                {
+                    add (r, { std::numeric_limits<float>::max(), 0 });
+                    break;
+                }
+            canvas.grabKeyboardFocus();
+        };
+        addAndMakeVisible (search);
+        rebuild();
+        list.owner = this;
+        list.setSize (libraryW, height());
+        viewport.setViewedComponent (&list, false);
+        viewport.setScrollBarsShown (true, false);
+        viewport.setScrollBarThickness (6);
+        addAndMakeVisible (viewport);
+        canvas.onLibraryDrop = [this] (const juce::var& item, juce::Point<float> world) {
+            const int index = (int) item["row"];
+            if (index >= 0 && index < (int) rows.size())
+                add (rows[(size_t) index], world);
+        };
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        search.setBounds (r.removeFromTop (34).reduced (16, 4));
+        viewport.setBounds (r);
+        list.setSize (viewport.getMaximumVisibleWidth(), height());
+    }
+
+    // Adds the row's module or subsystem to the patch, at a world point or wherever there is room.
+    void add (const Row& r, juce::Point<float> world)
+    {
+        if (! r.kind.empty())
+            canvas.addModule (r.kind, world);
+        else if (r.subsystem == -3)
+            canvas.newSubsystem();
+        else if (r.subsystem >= 1000)
+        {
+            const auto& entry = userSubsystems[(size_t) (r.subsystem - 1000)];
+            ps::presets::SubsystemTemplate t;
+            if (ps::presets::subsystemFromVar (juce::JSON::parse (entry.file.loadFileAsString()), t))
+                canvas.addSubsystem (t, world);
+            else
+                showError ("Couldn't add " + entry.name, "The file in your Subsystems folder isn't a subsystem any more.");
+        }
+        else if (r.subsystem >= 0)
+            canvas.addSubsystem (ps::presets::subsystems()[(size_t) r.subsystem], world);
+        else if (onImport)
+            onImport();
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (ps::theme::bg); }
+
+    // Lists the modules, the factory subsystems and the user's saved subsystems again.
+    void rebuild()
+    {
+        rows.clear();
+        const auto query = search.getText().trim();
+        auto matches = [&query] (const juce::String& text) { return query.isEmpty() || text.containsIgnoreCase (query); };
+        for (auto& section : ps::librarySections())
+        {
+            rows.push_back ({ section.title, {}, {}, -1, true });
+            for (auto& kind : section.kinds)
+                if (auto* info = ps::kindInfo (kind))
+                    if (matches (info->title) || matches (section.title))
+                        rows.push_back ({ info->title, ps::theme::rgb (info->colour), kind, -1, false });
+            if (rows.back().header)
+                rows.pop_back();
+        }
+        rows.push_back ({ "Subsystems", {}, {}, -1, true });
+        if (query.isEmpty())
+            rows.push_back ({ "New subsystem", juce::Colours::transparentBlack, {}, -3, false });
+        const auto& subs = ps::presets::subsystems();
+        for (int i = 0; i < (int) subs.size(); ++i)
+            if (matches (subs[(size_t) i].name))
+                rows.push_back ({ subs[(size_t) i].name, ps::theme::text, {}, i, false });
+        userSubsystems = ps::library::subsystems();
+        for (int i = 0; i < (int) userSubsystems.size(); ++i)
+            if (matches (userSubsystems[(size_t) i].name))
+                rows.push_back ({ userSubsystems[(size_t) i].name, ps::theme::textSoft, {}, 1000 + i, false });
+        if (query.isEmpty())
+            rows.push_back ({ "Add from file...", ps::theme::textDim, {}, -2, false });
+        else if (rows.back().header)
+            rows.pop_back();
+        if (rows.empty())
+            rows.push_back ({ "Nothing matches", {}, {}, -1, true });
+        list.setSize (std::max (1, viewport.getMaximumVisibleWidth()), height());
+        list.repaint();
+    }
+
+private:
     std::vector<ps::library::Entry> userSubsystems;
 
     static constexpr int rowH = 28, headerH = 34; // the dashboard's menu rows, tightened to fit the whole library
@@ -196,35 +262,53 @@ private:
             repaint();
         }
 
-        void mouseUp (const juce::MouseEvent& e) override
+        void mouseDrag (const juce::MouseEvent& e) override
         {
-            const int i = owner->rowAt (e.y);
-            if (i < 0 || e.mouseWasDraggedSinceMouseDown())
+            // Rows drag onto the workspace and land where they are dropped.
+            const int i = owner->rowAt (e.getMouseDownY());
+            if (dragging || i < 0 || e.getDistanceFromDragStart() < 6)
                 return;
             const auto& r = owner->rows[(size_t) i];
-            if (! r.kind.empty())
-                owner->canvas.addModule (r.kind);
-            else if (r.subsystem == -3)
-                owner->canvas.newSubsystem();
-            else if (r.subsystem >= 1000)
+            if (r.kind.empty() && r.subsystem < 0)
+                return;
+            auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this);
+            if (container == nullptr)
+                return;
+            dragging = true;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("row", i);
+            juce::Image ghost (juce::Image::ARGB, 150, 26, true);
             {
-                const auto& entry = owner->userSubsystems[(size_t) (r.subsystem - 1000)];
-                ps::presets::SubsystemTemplate t;
-                if (ps::presets::subsystemFromVar (juce::JSON::parse (entry.file.loadFileAsString()), t))
-                    owner->canvas.addSubsystem (t);
-                else
-                    showError ("Couldn't add " + entry.name, "The file in your Subsystems folder isn't a subsystem any more.");
+                juce::Graphics g (ghost);
+                g.setColour (ps::theme::menu.withAlpha (0.92f));
+                g.fillRoundedRectangle (ghost.getBounds().toFloat(), 6);
+                g.setColour (ps::theme::glassEdge);
+                g.drawRoundedRectangle (ghost.getBounds().toFloat().reduced (0.5f), 6, 1);
+                ps::theme::drawLed (g, { 13, 13 }, r.colour.isTransparent() ? ps::theme::text : r.colour, true, 5.0f);
+                g.setColour (ps::theme::textBright);
+                g.setFont (ps::theme::sans (12.5f));
+                g.drawText (r.text, 24, 0, 120, 26, juce::Justification::centredLeft, true);
             }
-            else if (r.subsystem >= 0)
-                owner->canvas.addSubsystem (ps::presets::subsystems()[(size_t) r.subsystem]);
-            else if (owner->onImport)
-                owner->onImport();
+            container->startDragging (juce::var (o), this, juce::ScaledImage (ghost), false, nullptr, &e.source);
         }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            const bool wasDrag = dragging;
+            dragging = false;
+            const int i = owner->rowAt (e.y);
+            if (i < 0 || wasDrag || e.mouseWasDraggedSinceMouseDown())
+                return;
+            owner->add (owner->rows[(size_t) i], { std::numeric_limits<float>::max(), 0 });
+        }
+
+        bool dragging = false;
     };
 
     PatchCanvas& canvas;
     std::function<void()> onImport;
     std::vector<Row> rows;
+    juce::TextEditor search;
     List list;
     juce::Viewport viewport;
 };

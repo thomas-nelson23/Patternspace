@@ -109,13 +109,17 @@ version don't match, since the app compares its own version with the tag.
 - Drag a value up or down to change it (Shift for finer steps), scroll over it, or double-click
   it to type a number. The arrows beside it still step by one.
 - Drag empty space to box-select modules (shift adds to the selection), right-drag or middle-drag to pan, Ctrl/Cmd-scroll or pinch to zoom, **Fit** to see the whole tab.
-- Click a module in the library to add it to the current tab.
+- Click a module in the library to add it to the current tab, or drag it onto the workspace to
+  put it right there. The search box at the top of the library filters it; Enter adds the first
+  match.
 - Drag from an output to an input to wire it; the ports it can land on grow while you drag. Drag a
   wired input to move the wire to another input, or drop it on empty space to remove it. Click a
   wire and press Delete to remove it too.
 - Ctrl/Cmd-C, X and V copy, cut and paste the selected modules with the wires between them. A paste lands at the mouse; pasted outputs start untagged because each tag has one source.
-- Click a port to give it a tag. An input with the same tag as an output receives it without a
-  wire, across tabs too. Wires win over tags.
+- Click a port to tag it. The menu lists the tags already in the patch to listen to, lets you
+  type a new one, pick its colour, jump to the output that owns it or see which inputs use it.
+  An input with the same tag as an output receives it without a wire, across tabs too; hover a
+  tag to see its links drawn dashed. Wires win over tags.
 - Drag a module by its header. Shift-click to select several. Click the arrow, or double-click
   the header, to collapse it.
 - Right-click empty space to add a module right there, paste, select all, collapse or expand
@@ -123,6 +127,15 @@ version don't match, since the app compares its own version with the tag.
   the arrow keys nudge the selection (Shift for 10 px).
 - Right-click a module to copy, cut, duplicate, collapse it, delete it or move it to another tab, or drag selected modules onto a tab to move them there. Wires to modules that
   stay behind become tags, so the patch keeps playing.
+- Select some modules and press Ctrl/Cmd-G (or right-click, **Group into a subsystem**) to turn
+  them into one subsystem. Wires and tags that cross its edge become its ports, so the patch
+  keeps playing the same.
+- Double-click empty space to write a note; right-click it for **Add a block here**, a titled
+  section that moves its modules with it. Ctrl/Cmd-B draws a block around the selection. Drag a
+  block's corner to resize it, double-click its title to rename it, and right-click it for
+  colours. Delete removes a selected block or note.
+- The minimap in the bottom-right corner shows the whole tab; click or drag on it to move around.
+  **M** hides and shows it.
 - Click **Open** on a subsystem (or double-click it) to see and edit the patch inside. The path
   at the top left, Esc, or a tab goes back out. Edits change that copy of the subsystem only.
 - **New subsystem** in the library adds an empty one and opens it. Add its inputs and outputs with
@@ -151,11 +164,6 @@ version don't match, since the app compares its own version with the tag.
 - `packaging`: the macOS .pkg, Windows Setup.exe and Linux .deb builders.
 - `tools/export-prototype.cjs`: regenerates the presets and reference data from the prototype
   with Playwright: `NODE_PATH=$(npm root -g) node tools/export-prototype.cjs`.
-
-## Not in the plug-in yet
-
-The prototype can still do a few things the plug-in can't: drawing new blocks and text labels
-(existing ones show and move), making a subsystem from a selection, choosing tag colours, and undo.
 
 ## Licences
 

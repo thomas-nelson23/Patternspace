@@ -8,9 +8,12 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <limits>
+
 // The plug-in window: transport and presets along the top, the module library on the left, the
 // workspace tabs and the patch canvas filling the rest.
 class PatternspaceEditor : public juce::AudioProcessorEditor,
+                           public juce::DragAndDropContainer,
                            private juce::ChangeListener,
                            private juce::Timer
 {
