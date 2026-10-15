@@ -1,0 +1,233 @@
+{
+  "name": "Dub Steppers",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "k",
+        "k": "euclid",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "hits": 4,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "rim",
+        "k": "step",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "RIM"
+        },
+        "p": {
+          "cells": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "h",
+        "k": "euclid",
+        "x": 224,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 7,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "hp",
+        "k": "prob",
+        "x": 434,
+        "y": 400,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "HAT"
+        },
+        "p": {
+          "chance": 7
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sk",
+        "k": "euclid",
+        "x": 434,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "SKANK"
+        },
+        "p": {
+          "hits": 4,
+          "len": 16,
+          "rot": 2
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "dv",
+        "k": "div",
+        "x": 434,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "BAR",
+          "1": "2BAR"
+        },
+        "tagOut": {
+          "0": "DROP"
+        },
+        "p": {
+          "div": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "cr",
+        "k": "euclid",
+        "x": 644,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {
+          "0": "CRASH"
+        },
+        "p": {
+          "hits": 1,
+          "len": 32,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 900,
+        "y": 120,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "RIM",
+          "2": "HAT",
+          "3": "SKANK",
+          "4": "CRASH"
+        },
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Dub kit",
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Rim",
+              "note": 37
+            },
+            {
+              "name": "Hat",
+              "note": 42
+            },
+            {
+              "name": "Skank",
+              "note": 39
+            },
+            {
+              "name": "Crash",
+              "note": 49
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "n1",
+        "x": 224,
+        "y": -40,
+        "text": "One drop: four kicks, a rim on 3, hats through a 70% chance, an off-beat skank on a clap, and a crash every two bars.",
+        "pg": "p1",
+        "w": 520
+      }
+    ],
+    "settings": {
+      "follow": 0,
+      "seed": 1234
+    }
+  }
+}

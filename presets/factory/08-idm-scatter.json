@@ -1,0 +1,246 @@
+{
+  "name": "IDM Scatter",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "ra",
+        "k": "random",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "len": 7,
+          "density": 6,
+          "seed": 17
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "rb",
+        "k": "random",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "len": 11,
+          "density": 5,
+          "seed": 23
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "cx",
+        "k": "combine",
+        "x": 434,
+        "y": 120,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "mode": "XOR"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sw",
+        "k": "switch",
+        "x": 644,
+        "y": 100,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "ways": 4,
+          "mode": "split"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "ca",
+        "k": "ca",
+        "x": 224,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "2BAR"
+        },
+        "tagOut": {},
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "cp",
+        "k": "prob",
+        "x": 434,
+        "y": 400,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "chance": 6
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sn",
+        "k": "euclid",
+        "x": 644,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "SNARE"
+        },
+        "p": {
+          "hits": 2,
+          "len": 16,
+          "rot": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 900,
+        "y": 60,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "SNARE"
+        },
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Scatter",
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Snare",
+              "note": 38
+            },
+            {
+              "name": "Hat",
+              "note": 42
+            },
+            {
+              "name": "Rim",
+              "note": 37
+            },
+            {
+              "name": "Clap",
+              "note": 39
+            },
+            {
+              "name": "Cowbell",
+              "note": 56
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "ra",
+        "p": 0,
+        "b": "cx",
+        "q": 0
+      },
+      {
+        "a": "rb",
+        "p": 0,
+        "b": "cx",
+        "q": 1
+      },
+      {
+        "a": "cx",
+        "p": 0,
+        "b": "sw",
+        "q": 2
+      },
+      {
+        "a": "sw",
+        "p": 0,
+        "b": "m",
+        "q": 2
+      },
+      {
+        "a": "sw",
+        "p": 1,
+        "b": "m",
+        "q": 3
+      },
+      {
+        "a": "sw",
+        "p": 2,
+        "b": "m",
+        "q": 4
+      },
+      {
+        "a": "sw",
+        "p": 3,
+        "b": "m",
+        "q": 5
+      }
+    ],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "n1",
+        "x": 224,
+        "y": -40,
+        "text": "Two prime-length random loops (7 and 11) XOR'd never quite repeat; a Switch scatters the result over four sounds. Reroll either loop for a new take.",
+        "pg": "p1",
+        "w": 560
+      }
+    ],
+    "settings": {
+      "follow": 1,
+      "seed": 1234
+    }
+  }
+}

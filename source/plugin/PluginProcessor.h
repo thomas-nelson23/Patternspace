@@ -35,10 +35,11 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.7; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // The factory patches, so hosts can list and switch them as programs.
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram (int) override;
+    const juce::String getProgramName (int) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -47,6 +48,13 @@ public:
     // ---- the patch, edited on the message thread
     ps::Graph& patch() { return graph; }
     const juce::String& patchName() const { return name; }
+    void setPatchName (const juce::String& newName);
+    // The file the patch was opened from or last saved to, if any, so Save can write it back.
+    const juce::File& patchFile() const { return file; }
+    void setPatchFile (const juce::File& f) { file = f; }
+    // True when the patch has changed since it was loaded or saved.
+    bool isDirty() const;
+    void markClean();
     // Call after every edit: recompiles the patch and swaps it in without stopping playback, and
     // records the state before the edit for undo. Consecutive commits with the same non-empty
     // `undoGroup` within a couple of seconds (a run of stepper clicks, a value drag) make one
@@ -96,6 +104,8 @@ private:
     // message thread
     ps::Graph graph;
     juce::String name;
+    juce::File file;
+    juce::String cleanPatch; // the patch text as loaded or last saved
     int editVersion = 0;
     std::vector<std::string> viewPath;
     struct Snapshot

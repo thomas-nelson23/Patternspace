@@ -1,0 +1,258 @@
+{
+  "name": "Breakbeat",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "kick",
+        "k": "step",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "cells": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "snr",
+        "k": "euclid",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "SNARE"
+        },
+        "p": {
+          "hits": 2,
+          "len": 16,
+          "rot": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "gh",
+        "k": "euclid",
+        "x": 224,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "hits": 3,
+          "len": 16,
+          "rot": 7
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "gp",
+        "k": "prob",
+        "x": 434,
+        "y": 400,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "GHOST"
+        },
+        "p": {
+          "chance": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "hat",
+        "k": "random",
+        "x": 434,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {},
+        "p": {
+          "len": 8,
+          "density": 7,
+          "seed": 311
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "hp",
+        "k": "prob",
+        "x": 644,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "chance": 8
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "ac",
+        "k": "accent",
+        "x": 854,
+        "y": 40,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "HAT"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "oh",
+        "k": "euclid",
+        "x": 434,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "OPEN"
+        },
+        "p": {
+          "hits": 2,
+          "len": 8,
+          "rot": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 1080,
+        "y": 120,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "SNARE",
+          "2": "HAT",
+          "3": "OPEN",
+          "4": "GHOST"
+        },
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Break kit",
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Snare",
+              "note": 38
+            },
+            {
+              "name": "Hat",
+              "note": 42
+            },
+            {
+              "name": "Open hat",
+              "note": 46
+            },
+            {
+              "name": "Ghost snare",
+              "note": 40
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [
+      {
+        "a": "gh",
+        "p": 0,
+        "b": "gp",
+        "q": 0
+      },
+      {
+        "a": "hat",
+        "p": 0,
+        "b": "hp",
+        "q": 0
+      },
+      {
+        "a": "hp",
+        "p": 0,
+        "b": "ac",
+        "q": 0
+      }
+    ],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "n1",
+        "x": 224,
+        "y": -40,
+        "text": "A break: the kick is drawn, the snare is E(2,16) rotated onto 2 and 4, and ghost notes come from a sparse Euclid through a 40% chance.",
+        "pg": "p1",
+        "w": 520
+      }
+    ],
+    "settings": {
+      "follow": 0,
+      "seed": 1234
+    }
+  }
+}

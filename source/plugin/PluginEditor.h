@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "Theme.h"
 #include "Updater.h"
+#include "UserLibrary.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -28,10 +29,22 @@ private:
     void timerCallback() override;
     void refreshPresets();
     void refreshZoom();
+    void showPatchMenu();
+    void newPatch();
     void openPatch();
-    void savePatch();
+    void openPatchFile (const juce::File&);
+    void loadPreset (const ps::json::Preset&);
+    void savePatch();   // to the file it came from, else Save as
+    void savePatchAs(); // a file dialog
+    void savePreset();  // into the user preset folder, by name
+    void renamePatch();
+    // Runs `go` now, or after asking what to do with unsaved changes.
+    void confirmDiscard (const juce::String& action, std::function<void()> go);
+    void askForText (const juce::String& title, const juce::String& prompt, const juce::String& initial, std::function<void (const juce::String&)> done);
     void importSubsystem();
-    void exportSubsystem (const ps::Node&);
+    void exportSubsystem (const ps::Node&);       // into the user's library
+    void exportSubsystemToFile (const ps::Node&); // anywhere, for sharing
+    std::function<void()> pendingAfterSave;
     void showUpdatesMenu();
     void refreshUpdateButton();
     void refreshTransport(); // dims the internal clock's controls while the host drives it
@@ -44,7 +57,7 @@ private:
     std::unique_ptr<Library> library;
     std::unique_ptr<TabStrip> tabs;
 
-    juce::ComboBox presetBox;
+    juce::TextButton patchButton; // the patch name; opens the patch menu
     juce::TextButton openButton { "Open..." }, saveButton { "Save..." };
     juce::TextButton playButton { "Play" }, resetButton { "Reset" };
     juce::ToggleButton syncButton { "Host sync" };

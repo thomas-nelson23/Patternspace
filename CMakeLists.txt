@@ -120,6 +120,8 @@ if(PATTERNSPACE_BUILD_PLUGIN)
         source/plugin/Theme.h
         source/plugin/Updater.cpp
         source/plugin/Updater.h
+        source/plugin/UserLibrary.cpp
+        source/plugin/UserLibrary.h
         source/state/PatchJson.cpp
         source/state/PatchJson.h
         source/update/UpdateCheck.cpp
