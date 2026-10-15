@@ -116,14 +116,19 @@ jobs:
 
       - name: Validate the CLAP with clap-validator
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           case "$RUNNER_OS" in
             Linux) pattern=ubuntu ;;
             macOS) pattern=macos-universal ;;
             Windows) pattern=windows ;;
           esac
-          url=$(curl -sSL https://api.github.com/repos/free-audio/clap-validator/releases/latest \
+          # Ask the API with the workflow token: anonymous calls hit the rate limit and return no assets.
+          url=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/repos/free-audio/clap-validator/releases/tags/0.4.1 \
             | jq -r --arg p "$pattern" '.assets[] | select(.name | test($p)) | .browser_download_url' | head -1)
+          [ -n "$url" ] || { echo "::error::no clap-validator release asset matches $pattern"; exit 1; }
           echo "Using $url"
           curl -sSL -o clap-validator.zip "$url"
           # the Linux and macOS zips hold a tarball; the Windows one the .exe itself
