@@ -35,6 +35,7 @@ private:
     void showUpdatesMenu();
     void refreshUpdateButton();
     void refreshTransport(); // dims the internal clock's controls while the host drives it
+    void saveViewState();
 
     PatternspaceProcessor& processor;
     ps::theme::Look look;
@@ -50,6 +51,7 @@ private:
     juce::TooltipWindow tooltips { nullptr, 500 }; // without one, setTooltip text never shows
     juce::Slider tempoSlider;
     juce::TextButton zoomOut { juce::String::fromUTF8 ("\xE2\x88\x92") }, zoomIn { "+" }, fitButton { "Fit" };
+    juce::TextButton collapseButton { "Collapse" }, snapButton { "Snap" }, helpButton { "?" };
     juce::Label zoomLabel;
 
     juce::AudioProcessorValueTreeState::ButtonAttachment playAttachment, syncAttachment;

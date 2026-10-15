@@ -105,15 +105,23 @@ version don't match, since the app compares its own version with the tag.
 
 ## Using it
 
+- **?** (or F1) in the tab row lists every shortcut. Ctrl/Cmd-Z and Shift-Z undo and redo any edit.
+- Drag a value up or down to change it (Shift for finer steps), scroll over it, or double-click
+  it to type a number. The arrows beside it still step by one.
 - Drag empty space to box-select modules (shift adds to the selection), right-drag or middle-drag to pan, Ctrl/Cmd-scroll or pinch to zoom, **Fit** to see the whole tab.
 - Click a module in the library to add it to the current tab.
-- Drag from an output to an input to wire it. Click a wire and press Delete to remove it.
+- Drag from an output to an input to wire it; the ports it can land on grow while you drag. Drag a
+  wired input to move the wire to another input, or drop it on empty space to remove it. Click a
+  wire and press Delete to remove it too.
 - Ctrl/Cmd-C, X and V copy, cut and paste the selected modules with the wires between them. A paste lands at the mouse; pasted outputs start untagged because each tag has one source.
 - Click a port to give it a tag. An input with the same tag as an output receives it without a
   wire, across tabs too. Wires win over tags.
 - Drag a module by its header. Shift-click to select several. Click the arrow, or double-click
   the header, to collapse it.
-- Right-click a module to collapse it, delete it or move it to another tab, or drag selected modules onto a tab to move them there. Wires to modules that
+- Right-click empty space to add a module right there, paste, select all, collapse or expand
+  everything, or turn on **Snap** (a 10 px grid). Ctrl/Cmd-A selects all, Ctrl/Cmd-D duplicates,
+  the arrow keys nudge the selection (Shift for 10 px).
+- Right-click a module to copy, cut, duplicate, collapse it, delete it or move it to another tab, or drag selected modules onto a tab to move them there. Wires to modules that
   stay behind become tags, so the patch keeps playing.
 - Click **Open** on a subsystem (or double-click it) to see and edit the patch inside. The path
   at the top left, Esc, or a tab goes back out. Edits change that copy of the subsystem only.

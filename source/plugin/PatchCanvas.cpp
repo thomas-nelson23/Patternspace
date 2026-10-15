@@ -16,6 +16,18 @@ constexpr float minZoom = 0.4f, maxZoom = 2.0f;
 
 juce::String u8 (const std::string& s) { return juce::String::fromUTF8 (s.c_str()); }
 
+// Shared by every open editor, so modules can be copied from one plugin instance into another.
+struct Clipboard
+{
+    std::vector<ps::Node> nodes;
+    std::vector<ps::Link> links; // only the wires between copied modules
+};
+Clipboard& clipboard()
+{
+    static Clipboard c;
+    return c;
+}
+
 float portY (const ps::Node& n, int i, int count)
 {
     return n.collapsed ? 15.0f + ((float) i - (float) (count - 1) / 2.0f) * 11.0f : 39.0f + (float) i * rowH;
@@ -87,7 +99,7 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w)
     if (k == "clock")
     {
         add (ItemType::bigText, 18, "bpm");
-        add (ItemType::text, 12, {}, "On play or a jump, line up with:");
+        add (ItemType::text, 12, {}, "Jumps line up with:");
         add (ItemType::modes, 18, "follow");
     }
     else if (k == "euclid" || k == "random")
@@ -210,6 +222,8 @@ void PatchCanvas::patchReplaced()
     drag = Drag::none;
     subPath.clear();
     savedViews.clear();
+    if (! processor.isRestoringHistory())
+        pageViews.clear();
     processor.setViewPath (subPath);
     const auto& pages = processor.patch().pages;
     const bool stillThere = std::any_of (pages.begin(), pages.end(), [this] (auto& pg) { return pg.id == currentPage; });
@@ -225,7 +239,15 @@ void PatchCanvas::setPage (const std::string& id)
         return;
     finishTagEdit (true);
     closeSubsystem();
+    pageViews[currentPage] = { scale, offset };
     currentPage = id;
+    if (auto it = pageViews.find (id); it != pageViews.end())
+    {
+        scale = it->second.scale;
+        offset = it->second.offset;
+        if (onViewChanged)
+            onViewChanged();
+    }
     selection.clear();
     selectedWire = -1;
     repaint();
@@ -458,6 +480,60 @@ void PatchCanvas::paintCrumbs (juce::Graphics& g)
 
 void PatchCanvas::resized() {}
 
+juce::String PatchCanvas::viewStateToString() const
+{
+    auto* o = new juce::DynamicObject();
+    const juce::var v (o);
+    o->setProperty ("page", u8 (currentPage));
+    auto* views = new juce::DynamicObject();
+    auto record = [&] (const std::string& page, const SavedView& view) {
+        auto* pv = new juce::DynamicObject();
+        pv->setProperty ("s", view.scale);
+        pv->setProperty ("x", view.offset.x);
+        pv->setProperty ("y", view.offset.y);
+        views->setProperty (u8 (page), juce::var (pv));
+    };
+    for (auto& [page, view] : pageViews)
+        if (page != currentPage)
+            record (page, view);
+    if (subPath.empty())
+        record (currentPage, { scale, offset });
+    else if (! savedViews.empty())
+        record (currentPage, savedViews.front());
+    o->setProperty ("views", juce::var (views));
+    return juce::JSON::toString (v, true);
+}
+
+void PatchCanvas::restoreViewState (const juce::String& state)
+{
+    juce::var v;
+    if (state.isEmpty() || juce::JSON::parse (state, v).failed() || ! v.isObject())
+        return;
+    pageViews.clear();
+    if (auto* views = v["views"].getDynamicObject())
+        for (auto& p : views->getProperties())
+        {
+            const auto& pv = p.value;
+            if (pv.isObject())
+                pageViews[p.name.toString().toStdString()] = { (float) (double) pv["s"], { (float) (double) pv["x"], (float) (double) pv["y"] } };
+        }
+    const auto page = v["page"].toString().toStdString();
+    const auto& pages = processor.patch().pages;
+    if (std::any_of (pages.begin(), pages.end(), [&] (auto& pg) { return pg.id == page; }))
+    {
+        closeSubsystem();
+        currentPage = page;
+    }
+    if (auto it = pageViews.find (currentPage); it != pageViews.end())
+    {
+        scale = juce::jlimit (minZoom, maxZoom, it->second.scale);
+        offset = it->second.offset;
+    }
+    if (onViewChanged)
+        onViewChanged();
+    repaint();
+}
+
 int PatchCanvas::settingOf (const char* key) const
 {
     const auto& settings = processor.patch().settings;
@@ -476,9 +552,9 @@ void PatchCanvas::timerCallback()
     repaint();
 }
 
-void PatchCanvas::edited()
+void PatchCanvas::edited (const juce::String& undoGroup)
 {
-    processor.commitPatch();
+    processor.commitPatch (undoGroup);
     viewValid = false;
     repaint();
     if (onEdited)
@@ -516,6 +592,8 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
             case ItemType::stepper:
                 L.zones.push_back ({ { it.r.getRight() - 52, it.r.getY(), 14, it.r.getHeight() }, ZoneType::param, it.key, -1 });
                 L.zones.push_back ({ { it.r.getRight() - 12, it.r.getY(), 14, it.r.getHeight() }, ZoneType::param, it.key, 1 });
+                L.zones.push_back ({ { it.r.getX(), it.r.getY(), it.r.getWidth() - 52, it.r.getHeight() }, ZoneType::paramValue, it.key, 0 });
+                L.zones.push_back ({ { it.r.getRight() - 38, it.r.getY(), 26, it.r.getHeight() }, ZoneType::paramValue, it.key, 0 });
                 break;
             case ItemType::cells:
                 if (it.key == "edit")
@@ -557,6 +635,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
             const float ry = y + ioTop + q * rowH;
             L.zones.push_back ({ { x + w - 62, ry, 14, rowH }, ZoneType::laneNote, {}, -(q + 1) });
             L.zones.push_back ({ { x + w - 26, ry, 14, rowH }, ZoneType::laneNote, {}, q + 1 });
+            L.zones.push_back ({ { x + w - 48, ry, 22, rowH }, ZoneType::paramValue, "lane" + std::to_string (q), 0 });
         }
     L.box = { x, y, w, bottom - y + 9 };
     L.header = { x, y, w, headerH };
@@ -722,6 +801,11 @@ void PatchCanvas::paint (juce::Graphics& g)
     }
 
     paintCrumbs (g);
+    if (helpShown)
+    {
+        paintHelp (g);
+        return;
+    }
 
     const auto idle = subPath.empty()
                           ? juce::String ("Drag empty space to select, right-drag to pan, Ctrl/Cmd-scroll to zoom. Drag an output onto an input to wire it, click a port to tag it.")
@@ -739,6 +823,53 @@ void PatchCanvas::paint (juce::Graphics& g)
     }
     g.setColour (message.isNotEmpty() ? textSoft : textDim);
     g.drawText (hint, hintArea.reduced (12, 0), juce::Justification::centredLeft, true);
+}
+
+// The shortcuts, on a glass panel over the workspace. ? or F1 toggles it; any key or click closes it.
+void PatchCanvas::paintHelp (juce::Graphics& g)
+{
+    using namespace ps::theme;
+    struct Row
+    {
+        const char* keys;
+        const char* what;
+    };
+    static const Row rows[] = {
+        { "Drag empty space", "Select modules in a box (Shift adds)" },
+        { "Right or middle drag", "Pan" },
+        { "Ctrl/Cmd scroll, pinch", "Zoom. + - 0 step and reset it" },
+        { "Drag output to input", "Wire. Drag a wired input to move or remove the wire" },
+        { "Click a port", "Give it a tag" },
+        { "Drag a value", "Change it. Shift is finer; scroll over it; double-click to type" },
+        { "Double-click a header", "Collapse the module. Double-click a subsystem to open it" },
+        { "Right-click", "Module actions, or add a module on empty space" },
+        { "Ctrl/Cmd Z, Shift-Z", "Undo, redo" },
+        { "Ctrl/Cmd C, X, V, D", "Copy, cut, paste at the mouse, duplicate" },
+        { "Ctrl/Cmd A", "Select every module on the tab" },
+        { "Arrows, Shift arrows", "Nudge the selection 1 or 10 px" },
+        { "Delete, Backspace", "Remove the selection or the chosen wire" },
+        { "Esc", "Clear the selection, or leave a subsystem" },
+        { "?", "This list" },
+    };
+    const float rowHeight = 22.0f;
+    const auto panel = juce::Rectangle<float> (0, 0, 560, 56 + rowHeight * (float) std::size (rows)).withCentre (getLocalBounds().getCentre().toFloat());
+    g.setColour (bg.withAlpha (0.6f));
+    g.fillAll();
+    drawPanel (g, panel, glassEdge);
+    g.setColour (textSoft);
+    g.setFont (caps (10.0f, 0.2f));
+    g.drawText ("KEYBOARD AND MOUSE", panel.reduced (24, 0).withHeight (40), juce::Justification::centredLeft);
+    float y = panel.getY() + 44;
+    for (auto& row : rows)
+    {
+        g.setColour (textBright);
+        g.setFont (mono (10.5f, true));
+        g.drawText (row.keys, juce::Rectangle<float> (panel.getX() + 24, y, 190, rowHeight), juce::Justification::centredLeft);
+        g.setColour (text);
+        g.setFont (sans (11.5f));
+        g.drawText (row.what, juce::Rectangle<float> (panel.getX() + 220, y, panel.getWidth() - 244, rowHeight), juce::Justification::centredLeft, true);
+        y += rowHeight;
+    }
 }
 
 void PatchCanvas::paintBlocks (juce::Graphics& g)
@@ -907,7 +1038,7 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
     // port labels (MIDI outs show each output's name and note instead)
     if (! n.collapsed)
     {
-        g.setFont (mono (9.5f));
+        g.setFont (mono (10.0f));
         if (n.kind == "midi")
         {
             for (int q = 0; q < (int) n.lanes.size(); ++q)
@@ -936,7 +1067,13 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
         paintBody (g, index, n, L);
     }
 
-    // ports: gate ports are rings, audio ports squares; a port lights while a hit passes through
+    // ports: gate ports are rings, audio ports squares; a port lights while a hit passes through.
+    // While a wire is being dragged, the ports it could land on grow and the rest fade.
+    const bool wiring = drag == Drag::wire && dragMoved && pressed.node >= 0 && pressed.node < (int) graph().nodes.size();
+    const bool fromOut = pressed.what == Hit::outPort;
+    const auto wireType = ! wiring ? ps::PortType::gate
+                        : fromOut  ? ps::outputType (graph().nodes[(size_t) pressed.node], pressed.port)
+                                   : ps::inputType (graph().nodes[(size_t) pressed.node], pressed.port);
     for (int dir = 0; dir < 2; ++dir)
     {
         const auto& pts = dir == 0 ? L.ins : L.outs;
@@ -945,7 +1082,13 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
             const bool audio = dir == 0 ? ps::inputType (n, i) == ps::PortType::audio : ps::outputType (n, i) == ps::PortType::audio;
             const int v = dir == 0 ? viewIn (index, i) : viewOut (index, i);
             const bool lit = v > 0 && ! (n.kind == "clock" && dir == 1 && i == 0) && ! audio;
-            const auto r = juce::Rectangle<float> (10, 10).withCentre (pts[(size_t) i]);
+            const bool target = wiring && (dir == 0) == fromOut && index != pressed.node
+                                && (audio ? ps::PortType::audio : ps::PortType::gate) == wireType;
+            const auto r = juce::Rectangle<float> (10, 10).withCentre (pts[(size_t) i]).expanded (target ? 2.0f : 0.0f);
+            if (wiring && ! target)
+                g.setOpacity (0.35f);
+            else
+                g.setOpacity (1.0f);
             g.setColour (panelBottom);
             if (audio)
                 g.fillRect (r);
@@ -960,6 +1103,7 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
                 g.fillEllipse (r.reduced (3));
         }
     }
+    g.setOpacity (1.0f);
 
     // tags
     g.setFont (mono (9.5f));
@@ -1001,7 +1145,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
         {
             case ItemType::text:
                 g.setColour (textDim);
-                g.setFont (sans (10.0f));
+                g.setFont (sans (10.5f));
                 g.drawFittedText (it.text, r.toNearestInt(), juce::Justification::topLeft, r.getHeight() > 14 ? 2 : 1, 1.0f);
                 break;
             case ItemType::bigText:
@@ -1231,6 +1375,11 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
     finishTagEdit (true);
+    if (helpShown)
+    {
+        setShowHelp (false);
+        return;
+    }
     dragStart = e.position;
     dragWorld = toWorld (e.position);
     dragMoved = false;
@@ -1267,6 +1416,24 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
         case Hit::inPort:
         case Hit::outPort:
             drag = Drag::wire;
+            if (pressed.what == Hit::inPort)
+            {
+                // A wired input: pick the wire up by its end so it can be moved or dropped away.
+                auto& links = patch.links;
+                const auto& dest = patch.nodes[(size_t) pressed.node];
+                auto it = std::find_if (links.begin(), links.end(), [&] (const ps::Link& l) { return l.b == dest.id && l.q == pressed.port; });
+                if (it != links.end())
+                {
+                    const int from = patch.indexOf (it->a);
+                    if (from >= 0)
+                    {
+                        pressed = { Hit::outPort, from, it->p };
+                        links.erase (it);
+                        dragMoved = true; // dropping it nowhere leaves it removed
+                        edited();
+                    }
+                }
+            }
             break;
         case Hit::inTag:
         case Hit::outTag:
@@ -1276,6 +1443,12 @@ void PatchCanvas::mouseDown (const juce::MouseEvent& e)
             {
                 drag = Drag::xy;
                 applyZone (pressed.node, pressed.zone, dragWorld);
+            }
+            else if (pressed.zone.type == ZoneType::paramValue)
+            {
+                drag = Drag::param;
+                dragAccum = 0;
+                selection = { patch.nodes[(size_t) pressed.node].id };
             }
             else
                 applyZone (pressed.node, pressed.zone, dragWorld);
@@ -1338,6 +1511,8 @@ void PatchCanvas::mouseDrag (const juce::MouseEvent& e)
 {
     if (e.position.getDistanceFrom (dragStart) > 3.0f)
         dragMoved = true;
+    const auto previousMouse = lastMouse;
+    lastMouse = e.position;
     dragWorld = toWorld (e.position);
     auto& patch = graph();
     const auto delta = (e.position - dragStart) / scale;
@@ -1372,11 +1547,32 @@ void PatchCanvas::mouseDrag (const juce::MouseEvent& e)
                 {
                     n->x = std::round (start.x + delta.x);
                     n->y = std::round (start.y + delta.y);
+                    if (snap)
+                    {
+                        n->x = std::round (n->x / 10.0) * 10.0;
+                        n->y = std::round (n->y / 10.0) * 10.0;
+                    }
                 }
             break;
         case Drag::xy:
             applyZone (pressed.node, pressed.zone, dragWorld);
             break;
+        case Drag::param:
+        {
+            // Every 6 screen pixels up or down is one step; Shift makes it 24.
+            const int perStep = e.mods.isShiftDown() ? 24 : 6;
+            const int pixels = juce::roundToInt (previousMouse.y - e.position.y) + dragAccum;
+            const int delta = pixels / perStep;
+            if (delta != 0)
+            {
+                dragAccum = pixels - delta * perStep;
+                applyParamDelta (pressed.node, pressed.zone.key, delta, "drag " + pressed.zone.key + patch.nodes[(size_t) pressed.node].id);
+            }
+            else
+                dragAccum = pixels;
+            setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+            break;
+        }
         case Drag::box:
         {
             const auto area = juce::Rectangle<float> (toWorld (dragStart), dragWorld);
@@ -1442,6 +1638,10 @@ void PatchCanvas::mouseUp (const juce::MouseEvent&)
         case Drag::xy:
             edited();
             break;
+        case Drag::param:
+            if (! dragMoved)
+                showMessage ("Drag the value up or down, scroll over it, or double-click to type it", 5000);
+            break;
         case Drag::pan:
             if (! dragMoved && menuPress && pressed.node >= 0)
             {
@@ -1463,6 +1663,14 @@ void PatchCanvas::mouseUp (const juce::MouseEvent&)
                 showNodeMenu (pressed.node);
                 return;
             }
+            if (! dragMoved && menuPress && pressed.what == Hit::none)
+            {
+                drag = Drag::none;
+                showCanvasMenu (dragWorld);
+                return;
+            }
+            if (dragMoved && onViewChanged)
+                onViewChanged();
             break;
         case Drag::box:
             break;
@@ -1486,6 +1694,27 @@ void PatchCanvas::mouseDoubleClick (const juce::MouseEvent& e)
     }
     else if (hit.what == Hit::body && graph().nodes[(size_t) hit.node].kind == "sub")
         openSubsystem (graph().nodes[(size_t) hit.node].id);
+    else if (hit.what == Hit::zone && hit.zone.type == ZoneType::paramValue)
+    {
+        const auto& n = graph().nodes[(size_t) hit.node];
+        tagNode = n.id;
+        textKey = hit.zone.key;
+        textTarget = TextTarget::param;
+        juce::String current;
+        if (textKey.rfind ("lane", 0) == 0)
+        {
+            const int q = std::stoi (textKey.substr (4));
+            if (q < (int) n.lanes.size())
+                current = u8 (ps::noteName (n.lanes[(size_t) q].note));
+        }
+        else
+            for (auto& spec : ps::paramsOf (n))
+                if (textKey == spec.key)
+                    current = juce::String (textKey == "nout" ? (int) n.lanes.size() : n.get (textKey) * spec.displayScale);
+        const auto r = hit.zone.r.expanded (2, 3);
+        showTextEditor ({ toScreen (r.getTopLeft()).toInt(), toScreen (r.getBottomRight()).toInt() }, current, "Value");
+        tagEditor->setJustification (juce::Justification::centred);
+    }
 }
 
 void PatchCanvas::mouseMove (const juce::MouseEvent& e)
@@ -1580,6 +1809,14 @@ void PatchCanvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWh
         zoomAround (scale * std::pow (1.0016f, wheel.deltaY * 300.0f), e.position);
         return;
     }
+    const auto hit = hitTest (toWorld (e.position));
+    if (hit.what == Hit::zone && (hit.zone.type == ZoneType::paramValue || hit.zone.type == ZoneType::param))
+    {
+        const int delta = wheel.deltaY > 0 ? 1 : wheel.deltaY < 0 ? -1 : 0;
+        if (delta != 0)
+            applyParamDelta (hit.node, hit.zone.key, delta, "wheel " + hit.zone.key + graph().nodes[(size_t) hit.node].id);
+        return;
+    }
     offset += juce::Point<float> (wheel.deltaX, wheel.deltaY) * 300.0f;
     repaint();
 }
@@ -1589,6 +1826,41 @@ void PatchCanvas::mouseMagnify (const juce::MouseEvent& e, float factor) { zoomA
 bool PatchCanvas::keyPressed (const juce::KeyPress& key)
 {
     const auto cmd = [&key] (char c) { return key == juce::KeyPress (c, juce::ModifierKeys::commandModifier, 0); };
+    if (helpShown && key != juce::KeyPress::escapeKey)
+        setShowHelp (false);
+    if (cmd ('z'))
+    {
+        processor.undo();
+        return true;
+    }
+    if (cmd ('y') || key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
+    {
+        processor.redo();
+        return true;
+    }
+    if (cmd ('a'))
+    {
+        selectAll();
+        return true;
+    }
+    if (cmd ('d'))
+    {
+        duplicateSelection();
+        return true;
+    }
+    if (key.isKeyCode (juce::KeyPress::leftKey) || key.isKeyCode (juce::KeyPress::rightKey) || key.isKeyCode (juce::KeyPress::upKey)
+        || key.isKeyCode (juce::KeyPress::downKey))
+    {
+        const float step = key.getModifiers().isShiftDown() ? 10.0f : 1.0f;
+        nudgeSelection (key.isKeyCode (juce::KeyPress::leftKey) ? -step : key.isKeyCode (juce::KeyPress::rightKey) ? step : 0.0f,
+                        key.isKeyCode (juce::KeyPress::upKey) ? -step : key.isKeyCode (juce::KeyPress::downKey) ? step : 0.0f);
+        return true;
+    }
+    if (key.getTextCharacter() == '?' || key == juce::KeyPress::F1Key)
+    {
+        setShowHelp (! helpShown);
+        return true;
+    }
     if (cmd ('c'))
     {
         copySelection();
@@ -1627,6 +1899,11 @@ bool PatchCanvas::keyPressed (const juce::KeyPress& key)
     }
     if (key == juce::KeyPress::escapeKey)
     {
+        if (helpShown)
+        {
+            setShowHelp (false);
+            return true;
+        }
         if (selection.empty() && selectedWire < 0 && ! subPath.empty())
         {
             closeSubsystem (subPath.size() - 1);
@@ -1741,6 +2018,97 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
         edited();
 }
 
+void PatchCanvas::applyParamDelta (int index, const std::string& key, int delta, const juce::String& undoGroup)
+{
+    auto& patch = graph();
+    if (index < 0 || index >= (int) patch.nodes.size() || delta == 0)
+        return;
+    auto& n = patch.nodes[(size_t) index];
+    selection = { n.id };
+    bool changed = false;
+    if (key.rfind ("lane", 0) == 0)
+    {
+        const int q = std::stoi (key.substr (4));
+        if (q < (int) n.lanes.size())
+        {
+            auto& lane = n.lanes[(size_t) q];
+            const int before = lane.note;
+            lane.note = juce::jlimit (0, 127, lane.note + delta);
+            if (auto* old = ps::gmDrumName (before); old && lane.name == old)
+                if (auto* now = ps::gmDrumName (lane.note))
+                    lane.name = now;
+            changed = lane.note != before;
+        }
+    }
+    else
+        changed = ps::stepParam (patch, n, key, delta);
+    if (changed)
+        edited (undoGroup);
+    else
+        repaint();
+}
+
+void PatchCanvas::selectAll()
+{
+    selection.clear();
+    for (auto& n : graph().nodes)
+        if (onPage (n))
+            selection.insert (n.id);
+    selectedWire = -1;
+    repaint();
+}
+
+void PatchCanvas::duplicateSelection()
+{
+    if (selection.empty())
+        return;
+    copySelection();
+    pasteCount = 0;
+    const bool over = isMouseOver();
+    if (over)
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+    // Land the copy a step down and right, as a paste without the mouse does.
+    auto& clip = clipboard();
+    juce::Point<float> topLeft { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+    for (const auto& n : clip.nodes)
+        topLeft = { std::min (topLeft.x, (float) n.x), std::min (topLeft.y, (float) n.y) };
+    lastMouse = toScreen (topLeft + juce::Point<float> (30, 30));
+    pasteClipboard();
+}
+
+void PatchCanvas::nudgeSelection (float dx, float dy)
+{
+    if (selection.empty())
+        return;
+    for (auto& n : graph().nodes)
+        if (selection.count (n.id))
+        {
+            n.x += dx;
+            n.y += dy;
+        }
+    edited ("nudge");
+}
+
+void PatchCanvas::setSnapToGrid (bool on)
+{
+    snap = on;
+    showMessage (on ? "Modules snap to a 10 px grid while dragging" : "Snapping off");
+}
+
+bool PatchCanvas::anyExpanded() const
+{
+    for (auto& n : graph().nodes)
+        if (onPage (n) && ! n.collapsed)
+            return true;
+    return false;
+}
+
+void PatchCanvas::setShowHelp (bool on)
+{
+    helpShown = on;
+    repaint();
+}
+
 void PatchCanvas::connect (int fromNode, int fromPort, int toNode, int toPort)
 {
     auto& patch = graph();
@@ -1792,21 +2160,6 @@ void PatchCanvas::deleteSelection()
     showMessage ("Removed " + juce::String ((int) count) + (count == 1 ? " module" : " modules"));
     edited();
 }
-
-namespace
-{
-    // Shared by every open editor, so modules can be copied from one plugin instance into another.
-    struct Clipboard
-    {
-        std::vector<ps::Node> nodes;
-        std::vector<ps::Link> links; // only the wires between copied modules
-    };
-    Clipboard& clipboard()
-    {
-        static Clipboard c;
-        return c;
-    }
-} // namespace
 
 void PatchCanvas::copySelection()
 {
@@ -1876,10 +2229,25 @@ void PatchCanvas::pasteClipboard()
     edited();
 }
 
-void PatchCanvas::addModule (const std::string& kind)
+void PatchCanvas::addModule (const std::string& kind, juce::Point<float> world)
 {
     auto& patch = graph();
-    const auto centre = toWorld (getLocalBounds().getCentre().toFloat());
+    auto centre = toWorld (getLocalBounds().getCentre().toFloat());
+    if (world.x != std::numeric_limits<float>::max())
+        centre = world + juce::Point<float> (75, 60);
+    else
+    {
+        // Step down and right until the spot is clear of other modules on this tab.
+        auto clear = [&] (juce::Point<float> at) {
+            const juce::Rectangle<float> r (at.x - 75, at.y - 60, 150, 60);
+            for (auto& m : patch.nodes)
+                if (onPage (m) && layoutOf (m).box.intersects (r))
+                    return false;
+            return true;
+        };
+        for (int tries = 0; tries < 12 && ! clear (centre); ++tries)
+            centre += juce::Point<float> (30, 30);
+    }
     auto prefix = kind.substr (0, std::min<size_t> (2, kind.size()));
     auto n = ps::makeNode (kind, patch.freshId (prefix), std::round (centre.x - 75), std::round (centre.y - 60));
     n.page = subPath.empty() ? currentPage : std::string(); // tabs only exist at the top
@@ -1990,15 +2358,47 @@ void PatchCanvas::showNodeMenu (int index)
     if (n.kind != "subin" && n.kind != "subout")
     {
         menu.addSeparator();
-        menu.addItem (selection.size() > 1 ? "Delete " + juce::String ((int) selection.size()) + " modules" : "Delete", [this] { deleteSelection(); });
+        const auto what = selection.size() > 1 ? " " + juce::String ((int) selection.size()) + " modules" : juce::String();
+        menu.addItem ("Copy" + what, [this] { copySelection(); });
+        menu.addItem ("Cut" + what, [this] {
+            copySelection();
+            deleteSelection();
+        });
+        menu.addItem ("Duplicate" + what, [this] { duplicateSelection(); });
+        menu.addItem ("Paste", ! clipboard().nodes.empty(), false, [this] { pasteClipboard(); });
+        menu.addSeparator();
+        menu.addItem ("Delete" + what, [this] { deleteSelection(); });
     }
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
 
-void PatchCanvas::showMessage (const juce::String& text)
+// Right-click on empty space: add a module right there, or paste.
+void PatchCanvas::showCanvasMenu (juce::Point<float> world)
+{
+    juce::PopupMenu menu;
+    for (auto& section : ps::librarySections())
+    {
+        juce::PopupMenu sub;
+        for (auto& kind : section.kinds)
+            if (auto* info = ps::kindInfo (kind))
+                sub.addItem (info->title, [this, kind, world] { addModule (kind, world); });
+        menu.addSubMenu (section.title, sub);
+    }
+    menu.addSeparator();
+    menu.addItem ("Paste", ! clipboard().nodes.empty(), false, [this] { pasteClipboard(); });
+    menu.addItem ("Select all", [this] { selectAll(); });
+    menu.addItem (anyExpanded() ? "Collapse all" : "Expand all", [this] { collapseAll (anyExpanded()); });
+    menu.addItem ("Fit to view", [this] { fitView(); });
+    menu.addSeparator();
+    menu.addItem ("Snap to grid", true, snap, [this] { setSnapToGrid (! snap); });
+    menu.addItem ("Keyboard shortcuts", [this] { setShowHelp (true); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
+}
+
+void PatchCanvas::showMessage (const juce::String& text, int milliseconds)
 {
     message = text;
-    messageUntil = juce::Time::getMillisecondCounter() + 2600;
+    messageUntil = juce::Time::getMillisecondCounter() + (juce::uint32) milliseconds;
     repaint();
 }
 
@@ -2024,7 +2424,8 @@ void PatchCanvas::editTag (int index, bool output, int port)
     showTextEditor ({ output ? juce::roundToInt (p.x) + 12 : juce::roundToInt (p.x) - 12 - w, juce::roundToInt (p.y) - h / 2, w, h },
                     it != tags.end() ? u8 (it->second) : juce::String(), output ? "Name this output" : "Tag to listen to");
     showMessage (output ? "Inputs with the same tag receive this output without a wire. Leave it empty to remove the tag."
-                        : "This input receives the output that owns the tag. Leave it empty to remove the tag.");
+                        : "This input receives the output that owns the tag. Leave it empty to remove the tag.",
+                 6000);
 }
 
 void PatchCanvas::editPortName (int index, int port)
@@ -2101,6 +2502,34 @@ void PatchCanvas::finishTagEdit (bool keep)
             n->name = name;
             edited();
         }
+        return;
+    }
+    if (textTarget == TextTarget::param)
+    {
+        const auto typed = text.trim();
+        if (typed.isEmpty())
+            return;
+        const int index = patch.indexOf (tagNode);
+        if (textKey.rfind ("lane", 0) == 0)
+        {
+            const int q = std::stoi (textKey.substr (4));
+            if (q < (int) n->lanes.size())
+            {
+                const int note = typed.containsOnly ("0123456789") ? typed.getIntValue() : ps::noteNumber (typed.toUpperCase().toStdString(), -1);
+                if (note >= 0)
+                    applyParamDelta (index, textKey, juce::jlimit (0, 127, note) - n->lanes[(size_t) q].note, {});
+                else
+                    showMessage ("Type a note like C1 or F#2, or a number 0 to 127");
+            }
+            return;
+        }
+        for (auto& spec : ps::paramsOf (*n))
+            if (textKey == spec.key)
+            {
+                const int now = textKey == "nout" ? (int) n->lanes.size() : n->get (textKey);
+                const int want = juce::roundToInt (typed.retainCharacters ("-0123456789.").getDoubleValue() / spec.displayScale);
+                applyParamDelta (index, textKey, want - now, {});
+            }
         return;
     }
     if (textTarget == TextTarget::portName)

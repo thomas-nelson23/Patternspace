@@ -460,7 +460,10 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     addAndMakeVisible (*library);
     addAndMakeVisible (*tabs);
 
-    canvas.onViewChanged = [this] { refreshZoom(); };
+    canvas.onViewChanged = [this] {
+        refreshZoom();
+        saveViewState();
+    };
     canvas.onPagesChanged = [this] { tabs->repaint(); };
     canvas.onLevelChanged = [this] { tabs->repaint(); };
     canvas.onEdited = [this] { tabs->repaint(); };
@@ -502,8 +505,15 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     tempoSlider.setTooltip ("Tempo of the internal clock");
     addAndMakeVisible (tempoSlider);
 
-    for (auto* b : { &zoomOut, &zoomIn, &fitButton })
+    for (auto* b : { &zoomOut, &zoomIn, &fitButton, &collapseButton, &snapButton, &helpButton })
         addAndMakeVisible (*b);
+    collapseButton.onClick = [this] { canvas.collapseAll (canvas.anyExpanded()); };
+    collapseButton.setTooltip ("Collapse every module on this tab to its header, or expand them all again");
+    snapButton.setClickingTogglesState (true);
+    snapButton.onClick = [this] { canvas.setSnapToGrid (snapButton.getToggleState()); };
+    snapButton.setTooltip ("Snap modules to a 10 px grid while dragging");
+    helpButton.onClick = [this] { canvas.setShowHelp (! canvas.showingHelp()); };
+    helpButton.setTooltip ("Keyboard and mouse shortcuts (? or F1)");
     zoomOut.onClick = [this] { canvas.zoomStep (-1); };
     zoomIn.onClick = [this] { canvas.zoomStep (1); };
     fitButton.onClick = [this] { canvas.fitView(); };
@@ -536,8 +546,30 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
 
     setResizable (true, true);
     setResizeLimits (900, 560, 4000, 3000);
-    setSize (1280, 800);
-    canvas.fitView();
+    // Where the window was last time, if the host kept our state.
+    int w = 1280, h = 800;
+    juce::var saved;
+    const auto viewState = processor.getViewState();
+    if (viewState.isNotEmpty() && juce::JSON::parse (viewState, saved).wasOk() && saved.isObject())
+    {
+        w = juce::jlimit (900, 4000, (int) saved.getProperty ("w", w));
+        h = juce::jlimit (560, 3000, (int) saved.getProperty ("h", h));
+    }
+    setSize (w, h);
+    if (saved.isObject())
+        canvas.restoreViewState (viewState);
+    else
+        canvas.fitView();
+}
+
+void PatternspaceEditor::saveViewState()
+{
+    juce::var v;
+    if (juce::JSON::parse (canvas.viewStateToString(), v).failed() || ! v.isObject())
+        return;
+    v.getDynamicObject()->setProperty ("w", getWidth());
+    v.getDynamicObject()->setProperty ("h", getHeight());
+    processor.setViewState (juce::JSON::toString (v, true));
 }
 
 PatternspaceEditor::~PatternspaceEditor()
@@ -594,14 +626,23 @@ void PatternspaceEditor::resized()
     zoomIn.setBounds (zoom.removeFromRight (30));
     zoomLabel.setBounds (zoom.removeFromRight (54));
     zoomOut.setBounds (zoom.removeFromRight (30));
+    auto tools = tabRow.removeFromRight (190).withSizeKeepingCentre (174, ps::theme::controlH).withY (tabRow.getBottom() - ps::theme::controlH - 5);
+    helpButton.setBounds (tools.removeFromRight (30));
+    tools.removeFromRight (6);
+    snapButton.setBounds (tools.removeFromRight (56));
+    tools.removeFromRight (6);
+    collapseButton.setBounds (tools.removeFromRight (76));
     tabs->setBounds (tabRow);
     canvas.setBounds (r);
+    if (isShowing())
+        saveViewState();
 }
 
 void PatternspaceEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     canvas.patchReplaced();
-    canvas.fitView();
+    if (! processor.isRestoringHistory()) // an undo keeps the view where it is
+        canvas.fitView();
     tabs->repaint();
     refreshPresets();
 }
