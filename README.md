@@ -106,7 +106,7 @@ version don't match, since the app compares its own version with the tag.
   wire, across tabs too. Wires win over tags.
 - Drag a module by its header. Shift-click to select several. Click the arrow, or double-click
   the header, to collapse it.
-- Right-click a module to collapse it, delete it or move it to another tab. Wires to modules that
+- Right-click a module to collapse it, delete it or move it to another tab, or drag selected modules onto a tab to move them there. Wires to modules that
   stay behind become tags, so the patch keeps playing.
 - Click **Open** on a subsystem (or double-click it) to see and edit the patch inside. The path
   at the top left, Esc, or a tab goes back out. Edits change that copy of the subsystem only.
