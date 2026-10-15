@@ -17,11 +17,11 @@ namespace
     {
         static const std::vector<KindInfo> k {
             { "clock", "Clock", 0x6f858e, {}, { "1/16", "bar", "2 bars" }, {}, {}, 150, false },
-            { "euclid", "Euclidean", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "random", "Random", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "ca", "Cellular", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
-            { "grids", "Drum map", 0x00f0ff, { "clk", "rst" }, { "kick", "snare", "hat" }, {}, {}, 220, false },
-            { "step", "Step grid", 0x00f0ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "euclid", "Euclidean", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "random", "Random", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "ca", "Cellular", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
+            { "grids", "Drum map", 0x2ad4ff, { "clk", "rst" }, { "kick", "snare", "hat" }, {}, {}, 220, false },
+            { "step", "Step grid", 0x2ad4ff, { "clk", "rst" }, { "gate" }, {}, {}, 150, true },
             { "div", "Clock divider", 0x6f858e, { "clk", "rst" }, { "out" }, {}, {}, 150, false },
             { "accent", "Accent", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },
             { "prob", "Probability", 0x9cc7cf, { "in" }, { "out" }, {}, {}, 150, false },

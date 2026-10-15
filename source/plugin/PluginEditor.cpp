@@ -16,31 +16,24 @@ void showError (const juce::String& title, const juce::String& message)
     juce::NativeMessageBox::showAsync (juce::MessageBoxOptions::makeOptionsOk (juce::MessageBoxIconType::WarningIcon, title, message), nullptr);
 }
 
-// The wordmark: a sliced vaporwave sun (a cyan-to-red disc whose lower half is cut by stripes of
-// the ground colour) beside "pattern" + "space", with "space" in cyan.
+// The wordmark, as the dashboard writes its own: "PATTERN" + "SPACE" in Michroma capitals, with
+// "SPACE" in red and a faint red glow.
 void drawBrand (juce::Graphics& g, juce::Rectangle<float> area)
 {
     using namespace ps::theme;
-    const auto disc = juce::Rectangle<float> (18, 18).withPosition (area.getX(), area.getCentreY() - 9);
-    {
-        juce::Graphics::ScopedSaveState save (g);
-        juce::Path clip;
-        clip.addEllipse (disc);
-        g.reduceClipRegion (clip);
-        g.setGradientFill (juce::ColourGradient (cyan, disc.getX(), disc.getY(), red, disc.getX(), disc.getBottom(), false));
-        g.fillRect (disc);
-        g.setColour (sidebar);
-        for (float y = disc.getCentreY() + 2.0f; y < disc.getBottom(); y += 3.5f)
-            g.fillRect (disc.getX(), y, disc.getWidth(), 1.5f);
-    }
-    const auto f = font (14.0f, Weight::semibold);
+    const auto f = display (15.0f).withExtraKerningFactor (0.08f);
     g.setFont (f);
-    const float x = disc.getRight() + 10;
-    const float w = juce::GlyphArrangement::getStringWidth (f, "pattern");
-    g.setColour (text);
-    g.drawText ("pattern", juce::Rectangle<float> (x, area.getY(), w + 1, area.getHeight()), juce::Justification::centredLeft, false);
-    g.setColour (cyan);
-    g.drawText ("space", juce::Rectangle<float> (x + w, area.getY(), 80, area.getHeight()), juce::Justification::centredLeft, false);
+    const float w = juce::GlyphArrangement::getStringWidth (f, "PATTERN");
+    g.setColour (textBright);
+    g.drawText ("PATTERN", area.withWidth (w + 2), juce::Justification::centredLeft, false);
+    const auto accent = area.withTrimmedLeft (w);
+    for (const auto& [dx, dy] : { std::pair (0.0f, 1.5f), std::pair (0.0f, -1.5f), std::pair (1.5f, 0.0f), std::pair (-1.5f, 0.0f) })
+    {
+        g.setColour (red.withAlpha (0.14f));
+        g.drawText ("SPACE", accent.translated (dx, dy), juce::Justification::centredLeft, false);
+    }
+    g.setColour (red);
+    g.drawText ("SPACE", accent, juce::Justification::centredLeft, false);
 }
 } // namespace
 
@@ -79,7 +72,7 @@ public:
         list.setSize (viewport.getMaximumVisibleWidth(), height());
     }
 
-    void paint (juce::Graphics& g) override { g.fillAll (ps::theme::sidebar); }
+    void paint (juce::Graphics& g) override { g.fillAll (ps::theme::bg); }
 
 private:
     struct Row
@@ -91,7 +84,7 @@ private:
         bool header = false;
     };
 
-    static constexpr int rowH = 31, headerH = 36; // a 30px row with 1px between, as in the system's sidebar
+    static constexpr int rowH = 28, headerH = 34; // the dashboard's menu rows, tightened to fit the whole library
 
     int height() const
     {
@@ -129,50 +122,47 @@ private:
                 if (r.header)
                 {
                     g.setColour (textDim);
-                    g.setFont (font (11.0f));
-                    g.drawText (r.text, juce::Rectangle<int> (20, top + 16, getWidth() - 30, 16), juce::Justification::centredLeft);
+                    g.setFont (caps (9.5f, 0.22f));
+                    g.drawText (r.text.toUpperCase(), juce::Rectangle<int> (20, top + 14, getWidth() - 30, 16), juce::Justification::centredLeft);
                     top += headerH;
                     continue;
                 }
-                const juce::Rectangle<float> box (10.0f, (float) top, (float) getWidth() - 20, (float) rowH - 1);
+                // Quiet menu rows, as in the dashboard: no fill, the name turns white under the mouse.
+                const juce::Rectangle<float> box (20.0f, (float) top, (float) getWidth() - 30, (float) rowH);
                 const bool hot = i == hover;
-                if (hot)
-                {
-                    g.setColour (wash);
-                    g.fillRoundedRectangle (box, radiusSm);
-                }
-                const auto mark = juce::Point<float> (box.getX() + 16, box.getCentreY());
+                const auto mark = juce::Point<float> (box.getX() + 4, box.getCentreY());
                 if (r.subsystem == -3 || r.subsystem == -2)
                 {
-                    // Actions take a red line icon: a plus, or an arrow into a tray.
+                    // Actions take a small red line icon: a plus, or an arrow into a tray.
                     juce::Path icon;
+                    const auto m = mark.translated (1, 0);
                     if (r.subsystem == -3)
                     {
-                        icon.startNewSubPath (mark.translated (-5, 0));
-                        icon.lineTo (mark.translated (5, 0));
-                        icon.startNewSubPath (mark.translated (0, -5));
-                        icon.lineTo (mark.translated (0, 5));
+                        icon.startNewSubPath (m.translated (-4, 0));
+                        icon.lineTo (m.translated (4, 0));
+                        icon.startNewSubPath (m.translated (0, -4));
+                        icon.lineTo (m.translated (0, 4));
                     }
                     else
                     {
-                        icon.startNewSubPath (mark.translated (0, -6));
-                        icon.lineTo (mark.translated (0, 2));
-                        icon.startNewSubPath (mark.translated (-3, -1));
-                        icon.lineTo (mark.translated (0, 2));
-                        icon.lineTo (mark.translated (3, -1));
-                        icon.startNewSubPath (mark.translated (-6, 2));
-                        icon.lineTo (mark.translated (-6, 5));
-                        icon.lineTo (mark.translated (6, 5));
-                        icon.lineTo (mark.translated (6, 2));
+                        icon.startNewSubPath (m.translated (0, -5));
+                        icon.lineTo (m.translated (0, 1.5f));
+                        icon.startNewSubPath (m.translated (-2.5f, -1));
+                        icon.lineTo (m.translated (0, 1.5f));
+                        icon.lineTo (m.translated (2.5f, -1));
+                        icon.startNewSubPath (m.translated (-5, 1.5f));
+                        icon.lineTo (m.translated (-5, 4.5f));
+                        icon.lineTo (m.translated (5, 4.5f));
+                        icon.lineTo (m.translated (5, 1.5f));
                     }
                     g.setColour (red);
                     g.strokePath (icon, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
                 }
                 else
-                    drawLed (g, mark, r.colour, true);
+                    drawLed (g, mark, r.colour, true, 5.0f);
                 g.setColour (hot ? textBright : (r.subsystem == -2 ? textDim : textSoft));
-                g.setFont (font (12.5f));
-                g.drawText (r.text, box.withTrimmedLeft (32).withTrimmedRight (6), juce::Justification::centredLeft, true);
+                g.setFont (sans (13.0f).withExtraKerningFactor (0.06f));
+                g.drawText (r.text, box.withTrimmedLeft (20).withTrimmedRight (6), juce::Justification::centredLeft, true);
                 top += rowH;
             }
         }
@@ -235,52 +225,46 @@ public:
         const auto mouse = getMouseXYRelative().toFloat();
         for (size_t i = 0; i < pages.size(); ++i)
         {
+            // Numbered like the dashboard's menu: the current tab lights its number red and its
+            // name white. While a subsystem is open the number dims: clicking the tab goes back out.
             const auto r = rects[i];
             const bool active = pages[i].id == canvas.page();
             const bool hot = isMouseOver() && r.contains (mouse);
             if (pages[i].id == dropTarget)
             {
-                g.setColour (cyanSoft);
-                g.fillRoundedRectangle (r, radiusSm);
-                g.setColour (cyan);
-                g.drawRoundedRectangle (r.reduced (0.5f), radiusSm, 1.0f);
-            }
-            else if (active)
-            {
-                g.setColour (cyanSoft);
-                g.fillRoundedRectangle (r, radiusSm);
-            }
-            else if (hot)
-            {
                 g.setColour (wash);
-                g.fillRoundedRectangle (r, radiusSm);
+                g.fillRoundedRectangle (r, r.getHeight() / 2);
+                g.setColour (cyan.withAlpha (0.6f));
+                g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() / 2, 1.0f);
             }
-            if (active)
+            auto row = r.withTrimmedLeft (12).withTrimmedRight (12);
+            const auto number = juce::String (i + 1).paddedLeft ('0', 2);
+            g.setFont (mono (10.0f));
+            const auto numberArea = row.removeFromLeft (18);
+            if (active && ! canvas.insideSubsystem())
             {
-                // The active tab's bar sits on its bottom edge. While a subsystem is open it dims:
-                // clicking the tab goes back out.
-                g.setColour (canvas.insideSubsystem() ? textDim : cyan);
-                g.fillRoundedRectangle (r.getX() + 10, r.getBottom() - 2, r.getWidth() - 20, 2.0f, 1.0f);
+                g.setColour (red.withAlpha (0.25f));
+                g.drawText (number, numberArea.translated (0, 1), juce::Justification::centredLeft, false);
+                g.drawText (number, numberArea.translated (0, -1), juce::Justification::centredLeft, false);
             }
-            g.setColour (active ? textBright : (hot ? text : textSoft));
-            g.setFont (font (12.5f));
-            g.drawText (u8 (pages[i].name), r.withTrimmedLeft (12).withTrimmedRight (34), juce::Justification::centredLeft, true);
-            const int count = moduleCount (pages[i].id);
-            const auto label = juce::String (count);
-            const float bw = juce::GlyphArrangement::getStringWidth (font (10.5f), label) + 14;
-            const auto badge = juce::Rectangle<float> (r.getRight() - 10 - bw, r.getCentreY() - 8, bw, 16);
-            g.setColour (line);
-            g.drawRoundedRectangle (badge.reduced (0.5f), 8, 1.0f);
-            g.setColour (textDim);
-            g.setFont (font (10.5f));
-            g.drawText (label, badge, juce::Justification::centred);
+            g.setColour (active && ! canvas.insideSubsystem() ? red : textDim);
+            g.drawText (number, numberArea, juce::Justification::centredLeft, false);
+            row.removeFromLeft (8);
+            const auto count = juce::String (moduleCount (pages[i].id));
+            g.setColour (cyan.withAlpha (0.6f));
+            g.drawText (count, row.removeFromRight (juce::GlyphArrangement::getStringWidth (mono (10.0f), count) + 2), juce::Justification::centredRight,
+                        false);
+            row.removeFromRight (8);
+            g.setColour (active || hot ? textBright : textDim);
+            g.setFont (sans (13.0f, active ? Weight::semibold : Weight::regular).withExtraKerningFactor (0.06f));
+            g.drawText (u8 (pages[i].name), row, juce::Justification::centredLeft, true);
         }
         const auto add = addRect();
         const bool addHot = isMouseOver() && add.contains (mouse);
         if (addHot)
         {
             g.setColour (wash);
-            g.fillRoundedRectangle (add, radiusSm);
+            g.fillEllipse (add);
         }
         juce::Path plus;
         const auto c = add.getCentre();
@@ -353,12 +337,15 @@ private:
     std::vector<juce::Rectangle<float>> tabRects() const
     {
         std::vector<juce::Rectangle<float>> out;
-        float x = 16;
+        float x = 8;
         const float h = (float) ps::theme::controlH, y = (float) getHeight() - h - 5;
-        for (auto& p : processor.patch().pages)
+        const auto& pages = processor.patch().pages;
+        for (size_t i = 0; i < pages.size(); ++i)
         {
-            const float w = juce::GlyphArrangement::getStringWidth (ps::theme::font (12.5f), u8 (p.name)) + 58;
-            out.push_back ({ x, y, std::max (84.0f, w), h });
+            const auto count = juce::String (moduleCount (pages[i].id));
+            const float w = juce::GlyphArrangement::getStringWidth (ps::theme::sans (13.0f, ps::theme::Weight::semibold).withExtraKerningFactor (0.06f), u8 (pages[i].name))
+                            + juce::GlyphArrangement::getStringWidth (ps::theme::mono (10.0f), count) + 62;
+            out.push_back ({ x, y, w, h });
             x = out.back().getRight() + 4;
         }
         return out;
@@ -368,7 +355,7 @@ private:
     {
         const auto rects = tabRects();
         const float h = (float) ps::theme::controlH;
-        const float x = rects.empty() ? 16.0f : rects.back().getRight() + 4;
+        const float x = rects.empty() ? 16.0f : rects.back().getRight() + 6;
         return { x, (float) getHeight() - h - 5, h, h };
     }
 
@@ -419,7 +406,7 @@ private:
             return;
         renaming = index;
         editor = std::make_unique<juce::TextEditor>();
-        editor->setFont (ps::theme::font (12.5f));
+        editor->setFont (ps::theme::sans (13.0f));
         editor->setText (u8 (processor.patch().pages[(size_t) index].name), false);
         editor->onReturnKey = [this] { finishRename (true); };
         editor->onEscapeKey = [this] { finishRename (false); };
@@ -504,6 +491,7 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     addAndMakeVisible (syncButton);
 
     tempoSlider.setSliderStyle (juce::Slider::LinearBar);
+    tempoSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     tempoSlider.setTextValueSuffix (" BPM");
     tempoSlider.setNumDecimalPlacesToDisplay (1);
     tempoSlider.setTooltip ("Tempo of the internal clock");
@@ -515,7 +503,7 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     zoomIn.onClick = [this] { canvas.zoomStep (1); };
     fitButton.onClick = [this] { canvas.fitView(); };
     zoomLabel.setJustificationType (juce::Justification::centred);
-    zoomLabel.setFont (ps::theme::font (11.0f));
+    zoomLabel.setFont (ps::theme::mono (11.0f));
     zoomLabel.setColour (juce::Label::textColourId, ps::theme::textSoft);
     zoomOut.setTooltip ("Zoom out");
     zoomIn.setTooltip ("Zoom in");
@@ -555,12 +543,14 @@ void PatternspaceEditor::paint (juce::Graphics& g)
 {
     using namespace ps::theme;
     g.fillAll (bg);
-    // The sidebar runs the full height, with the wordmark at its top and a hairline cyan edge.
-    g.setColour (sidebar);
-    g.fillRect (0, 0, libraryW, getHeight());
-    g.setColour (line);
-    g.fillRect (libraryW, 0, 1, getHeight());
-    drawBrand (g, juce::Rectangle<float> (20.0f, 0.0f, (float) libraryW - 30, (float) topBarH));
+    // The library sits on the field with no panel behind it, just an edge that fades out at both
+    // ends, as the dashboard's pinned menu does. The wordmark is at its top.
+    const float h = (float) getHeight();
+    juce::ColourGradient edge (juce::Colours::white.withAlpha (0.0f), 0, h * 0.1f, juce::Colours::white.withAlpha (0.0f), 0, h * 0.9f, false);
+    edge.addColour (0.5, juce::Colours::white.withAlpha (0.12f));
+    g.setGradientFill (edge);
+    g.fillRect ((float) libraryW, h * 0.1f, 1.0f, h * 0.8f);
+    drawBrand (g, juce::Rectangle<float> (20.0f, 6.0f, (float) libraryW - 30, (float) topBarH - 6));
 }
 
 void PatternspaceEditor::resized()
@@ -579,7 +569,7 @@ void PatternspaceEditor::resized()
     top.removeFromLeft (6);
     updatesButton.setBounds (top.removeFromLeft (updater != nullptr && updater->updateAvailable() ? 150 : 86));
 
-    syncButton.setBounds (top.removeFromRight (112));
+    syncButton.setBounds (top.removeFromRight (100));
     top.removeFromRight (6);
     tempoSlider.setBounds (top.removeFromRight (124));
     top.removeFromRight (6);

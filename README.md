@@ -140,9 +140,11 @@ The prototype can still do a few things the plug-in can't: drawing new blocks an
 Patternspace is built with [JUCE](https://juce.com), which is available under the AGPLv3 or a
 commercial JUCE licence, and the MIT-licensed
 [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions). Distributing a
-closed-source build needs a JUCE licence. The interface uses [Fira Code](https://github.com/tonsky/FiraCode),
-embedded from `resources/fonts` under the SIL Open Font License (`resources/fonts/OFL.txt`).
+closed-source build needs a JUCE licence. The interface uses [Sora](https://github.com/sora-xor/sora-font),
+[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and
+[Michroma](https://github.com/googlefonts/Michroma-font), embedded from `resources/fonts` under the
+SIL Open Font License (`resources/fonts/licenses`).
 
-The look follows the Home Dashboard design system: near-black surfaces with hairline cyan borders,
-cyan for what is live or chosen, red for outputs and icons, and Fira Code throughout. Its colours
-and metrics live in `source/plugin/Theme.h`.
+The look follows the Home Dashboard's Deep Ocean theme: one flat deep-blue field, dark glass
+panels with hairline edges, cyan for what is live or chosen, red for small signals, and tracked
+capitals for panel titles. Its colours and metrics live in `source/plugin/Theme.h`.
