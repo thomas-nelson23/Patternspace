@@ -5,6 +5,7 @@
 #include "../source/core/Engine.h"
 #include "../source/core/Modules.h"
 #include "../source/core/Patterns.h"
+#include "../source/core/Sampler.h"
 #include "../source/state/PatchJson.h"
 #include "../source/update/UpdateCheck.h"
 
@@ -814,6 +815,131 @@ void testControlSignals()
 }
 
 // The editor draws an open subsystem from the engine's view of the graph inside it.
+void testSamplesAndMixing()
+{
+    // A patch sound: a one-second ramp at 48 kHz, played by one Sample player into Out 2.
+    ps::Graph g;
+    g.pages = { { "p", "A" } };
+    ps::Sample s;
+    s.id = "s1";
+    s.name = "ramp";
+    s.rate = 48000;
+    s.data.resize (48000);
+    for (size_t i = 0; i < s.data.size(); ++i)
+        s.data[i] = 0.5f;
+    g.samples.push_back (s);
+    auto clk = ps::makeNode ("clock", "clk", 0, 0);
+    auto e = ps::makeNode ("euclid", "e", 0, 0);
+    e.set ("hits", 16);
+    auto sp = ps::makeNode ("sample", "sp", 0, 0);
+    sp.sample = "s1";
+    sp.set ("lvl", 50);
+    sp.set ("pan", 50);
+    sp.set ("choke", 2);
+    sp.set ("mono", 1);
+    sp.set ("start", 10);
+    sp.set ("cut", 60);
+    auto out = ps::makeNode ("audio", "out", 0, 0);
+    out.set ("bus", 2);
+    g.nodes = { clk, e, sp, out };
+    g.links = { { "clk", 0, "e", 0 }, { "e", 0, "sp", 0 }, { "sp", 0, "out", 0 } };
+
+    // The file format carries the sound (it is under the embed limit) and the player's settings.
+    ps::Graph again;
+    check (ps::json::fromString (ps::json::toString (g), again), "a patch with a sample re-reads");
+    check (again.samples.size() == 1 && again.samples[0].id == "s1" && again.samples[0].name == "ramp" && again.samples[0].rate == 48000
+               && again.samples[0].data.size() == 48000 && std::abs (again.samples[0].data[100] - 0.5f) < 0.001f,
+           "the sound is embedded as 16-bit PCM and comes back");
+    check (again.nodes[2].get ("choke") == 2 && again.nodes[2].get ("mono") == 1 && again.nodes[2].get ("cut") == 60, "the player's settings round-trip");
+    ps::Sample longOne = s;
+    longOne.id = "s2";
+    longOne.data.resize (48000 * 5);
+    longOne.path = "/tmp/nowhere.wav";
+    g.samples.push_back (longOne);
+    ps::Graph again2;
+    check (ps::json::fromString (ps::json::toString (g), again2) && again2.samples.size() == 2 && again2.samples[1].data.empty()
+               && again2.samples[1].path == "/tmp/nowhere.wav",
+           "a sound over the embed limit keeps its path only");
+    g.samples.pop_back();
+
+    // The engine names the sound after the built-in ones, with the player's level, pan and so on.
+    ps::Engine engine;
+    engine.load (g);
+    engine.setMeter (16, 0);
+    ps::StepOutput o;
+    o.clear();
+    engine.step (0, o);
+    checkEq ((int) o.hits.size(), 1, "one hit into one out");
+    if (! o.hits.empty())
+    {
+        const auto& h = o.hits[0];
+        checkEq (h.sample, (int) ps::sampleNames().size(), "the patch's first sound follows the built-in ones");
+        checkEq (h.bus, 2, "into Out 2");
+        check (h.level == 50 && h.pan == 50 && h.start == 10 && h.cutoff == 60 && h.choke == 2 && h.mono, "the hit carries the player's settings");
+    }
+
+    // The sampler: level and pan land on the right channel and bus, the start offset skips the
+    // beginning, and a second mono hit fades the first out instead of stacking.
+    ps::Sampler sampler;
+    sampler.prepare (48000);
+    sampler.setUserSamples (ps::Sampler::bankFor (g.samples));
+    checkEq (sampler.numSounds(), (int) ps::sampleNames().size() + 1, "the bank holds the built-in sounds and the patch's");
+    std::vector<float> l (512, 0.0f), r (512, 0.0f), other (512, 0.0f);
+    std::array<float*, ps::Sampler::numBuses> left {}, right {};
+    for (auto& p : left) p = other.data();
+    for (auto& p : right) p = other.data();
+    left[1] = l.data();
+    right[1] = r.data();
+    auto hit = o.hits.empty() ? ps::StepOutput::Hit {} : o.hits[0];
+    hit.cutoff = 100; // open, so the level is easy to read
+    sampler.trigger (hit, 0);
+    sampler.render (left, right, 512);
+    const float expected = 0.5f * 0.4f * 0.5f; // the sound, a plain hit's gain, Level 50%
+    check (std::abs (r[1] - expected) < 0.02f, "panned hard right, the right channel carries the level: " + juce::String (r[1]));
+    check (std::abs (l[1]) < 0.001f, "and the left channel nothing");
+    check (std::abs (other[1]) < 0.001f, "and no other out hears it");
+    checkEq (sampler.activeVoices(), 1, "one voice plays");
+    sampler.trigger (hit, 0); // mono: the first voice goes into a fading tail
+    checkEq (sampler.activeVoices(), 1, "a mono retrigger replaces the voice rather than stacking");
+    std::fill (r.begin(), r.end(), 0.0f);
+    sampler.render (left, right, 512);
+    check (r[0] > expected * 1.5f && r[400] < expected * 1.2f, "the old voice fades over a few milliseconds instead of cutting: " + juce::String (r[0]) + " then " + juce::String (r[400]));
+
+    // The filter closes the sound down: at a low cutoff a step input's first samples are quieter.
+    ps::Sampler dull;
+    dull.prepare (48000);
+    dull.setUserSamples (ps::Sampler::bankFor (g.samples));
+    hit.cutoff = 10;
+    hit.mono = false;
+    std::fill (r.begin(), r.end(), 0.0f);
+    dull.trigger (hit, 0);
+    dull.render (left, right, 512);
+    check (r[0] < expected * 0.5f && r[500] > r[0], "a low cutoff rounds the attack off: " + juce::String (r[0]) + " then " + juce::String (r[500]));
+
+    // Choke: a hit in group 2 cuts a different player's voice in group 2.
+    ps::Sampler choke;
+    choke.prepare (48000);
+    choke.setUserSamples (ps::Sampler::bankFor (g.samples));
+    hit.cutoff = 100;
+    hit.owner = 1;
+    choke.trigger (hit, 0);
+    hit.owner = 2;
+    choke.trigger (hit, 0);
+    checkEq (choke.activeVoices(), 1, "a choke group holds one voice at a time");
+    hit.choke = 0;
+    choke.trigger (hit, 0);
+    checkEq (choke.activeVoices(), 2, "outside the group, voices stack");
+
+    // A missing sound (bad index) is ignored, not a crash; the built-in sounds still play.
+    hit.sample = 99;
+    choke.trigger (hit, 0);
+    checkEq (choke.activeVoices(), 2, "an unknown sound is ignored");
+    hit.sample = 0;
+    hit.bus = 1;
+    choke.trigger (hit, 0);
+    checkEq (choke.activeVoices(), 3, "a built-in sound still plays");
+}
+
 void testSubsystemView()
 {
     auto presets = factoryPresets();
@@ -914,6 +1040,7 @@ int main()
     testGroupIntoSubsystem();
     testVelocityAndShapers();
     testControlSignals();
+    testSamplesAndMixing();
     testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";

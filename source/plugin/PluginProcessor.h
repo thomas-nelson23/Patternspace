@@ -5,6 +5,7 @@
 #include "../core/Sampler.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <array>
@@ -87,7 +88,15 @@ public:
     // the latest edit yet, or the audio thread holds it right now.
     bool copyView (std::vector<ps::Engine::View>& out) const;
     float busLevel (int bus) const; // audio out 1-8, peak since the last call to decayLevels
+    float masterLevel() const { return masterPeak.load(); } // Out 1 after the master trim and clipper
+    bool clippedRecently();                                  // Out 1 went over 0 dB since the last call
     void decayLevels();
+
+    // ---- the patch's own sounds. Reads a WAV, AIFF, FLAC, Ogg or MP3 file (mixed to mono, up to
+    // a minute) into `sample`, naming it after the file. False if the file can't be read.
+    bool loadSampleFile (const juce::File&, ps::Sample& sample);
+    // Reads again every sound the patch file didn't embed, from its path; marks the rest missing.
+    void resolveSamples();
     bool isRunning() const { return running.load(); }
     bool isFollowingHost() const { return followingHost.load(); } // the host's transport drives the clock
     double currentTempo() const { return tempo.load(); }
@@ -130,7 +139,8 @@ private:
     // the end), ends a held copy of it first, cuts off its choke group, and queues its note off.
     void scheduleNote (juce::MidiBuffer& midi, int channel, int note, int velocity, int offset, int length, int choke, int numSamples);
     void flushPendingOns (juce::MidiBuffer& midi, int numSamples);
-    void readSettings(); // the patch's clock rate and swing, for the audio thread
+    void readSettings(); // the patch's clock rate, swing and Audio out levels, for the audio thread
+    void updateSamples(); // gives the sampler the patch's sounds when they change
 
     // message thread
     ps::Graph graph;
@@ -159,7 +169,16 @@ private:
     juce::String savedPatch, savedName, viewState;
 
     // audio thread
+    mutable juce::SpinLock samplerLock; // held through a block; the message thread swaps sounds under it
     ps::Sampler sampler;
+    std::vector<ps::Sampler::Sound> userBank; // what the sampler was last given, for prepareToPlay
+    std::string samplesSignature;
+    juce::AudioFormatManager formats;
+    std::array<std::atomic<float>, ps::Sampler::numBuses> busGainL {}, busGainR {};
+    std::atomic<float>* masterParam = nullptr;
+    std::atomic<float>* clipParam = nullptr;
+    std::atomic<float> masterPeak { 0 };
+    std::atomic<int> clipCount { 0 };
     ps::StepOutput stepOut;
     double internalPpq = 0;
     bool wasPlaying = false;

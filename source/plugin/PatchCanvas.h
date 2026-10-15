@@ -18,6 +18,7 @@ class PatternspaceProcessor;
 // wire it, click a port to tag it.
 class PatchCanvas : public juce::Component,
                     public juce::DragAndDropTarget,
+                    public juce::FileDragAndDropTarget,
                     private juce::Timer
 {
 public:
@@ -42,6 +43,16 @@ public:
     void itemDragExit (const SourceDetails&) override;
     void itemDropped (const SourceDetails&) override;
     std::function<void (const juce::var& item, juce::Point<float> world)> onLibraryDrop;
+
+    // Audio files dropped on a Sample player load into it; dropped on empty space, each one gets
+    // its own Sample player. `loadSample` reads the file (the processor knows the formats).
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void fileDragEnter (const juce::StringArray&, int, int) override;
+    void fileDragExit (const juce::StringArray&) override;
+    void filesDropped (const juce::StringArray& files, int x, int y) override;
+    std::function<bool (const juce::File&, ps::Sample&)> loadSample;
+    void loadSampleFiles (const juce::Array<juce::File>& files, int node, juce::Point<float> world); // node -1 adds players
+    void chooseSampleFile (int node); // a file dialog
 
     // Called when the processor loads a different patch.
     void patchReplaced();
@@ -217,6 +228,9 @@ private:
     void goToNode (const std::string& id); // select it and bring it into view, switching tabs if needed
     void showBlockMenu (int block);
     void showLaneMenu (int node, int lane);
+    void showSampleMenu (int node); // built-in sounds, the patch's own, load a file
+    juce::String sampleLabel (const ps::Node&) const;
+    std::vector<std::string> sampleChoices() const; // built-in names then the patch's sample ids
     void showTargetMenu (int node);
     void showNoteMenu (int note);
     void editBlockTitle (int block);
@@ -269,6 +283,7 @@ private:
     bool helpShown = false;
     std::map<std::string, SavedView> pageViews; // the view of each tab left and come back to
 
+    std::unique_ptr<juce::FileChooser> sampleChooser;
     std::unique_ptr<juce::TextEditor> tagEditor; // made once, shown while a tag is being named
     bool tagEditing = false;
     enum class TextTarget

@@ -550,6 +550,121 @@ private:
     int renaming = -1;
 };
 
+// ---- the output strip ------------------------------------------------------------------------
+
+// A button with the master meter drawn along its bottom edge; it turns red for a moment when the
+// output went past 0 dB (the soft clipper caught it, but the level is too hot).
+class PatternspaceEditor::OutputButton : public juce::TextButton,
+                                         private juce::Timer
+{
+public:
+    explicit OutputButton (PatternspaceProcessor& p) : TextButton ("Out"), processor (p) { startTimerHz (20); }
+
+    void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+    {
+        TextButton::paintButton (g, highlighted, down);
+        using namespace ps::theme;
+        const auto r = getLocalBounds().toFloat().reduced (10, 0).removeFromBottom (7).withHeight (3);
+        g.setColour (cellOff);
+        g.fillRoundedRectangle (r, 1.5f);
+        const float level = juce::jlimit (0.0f, 1.0f, processor.masterLevel());
+        if (level > 0)
+        {
+            g.setColour (clipLeft > 0 ? red : cyan);
+            g.fillRoundedRectangle (r.withWidth (r.getWidth() * level), 1.5f);
+        }
+    }
+
+private:
+    void timerCallback() override
+    {
+        if (processor.clippedRecently())
+            clipLeft = 20;
+        else if (clipLeft > 0)
+            --clipLeft;
+        repaint();
+    }
+
+    PatternspaceProcessor& processor;
+    int clipLeft = 0;
+};
+
+// The strip: the master trim, the soft clipper and a meter for each out, in a call-out under the
+// Out button.
+class PatternspaceEditor::OutputPanel : public juce::Component,
+                                        private juce::Timer
+{
+public:
+    explicit OutputPanel (PatternspaceProcessor& p)
+        : processor (p), masterAttachment (p.params, "master", master), clipAttachment (p.params, "clip", clip)
+    {
+        using namespace ps::theme;
+        master.setSliderStyle (juce::Slider::LinearBar);
+        master.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        master.setTextValueSuffix (" dB");
+        master.setNumDecimalPlacesToDisplay (1);
+        master.setDoubleClickReturnValue (true, 0.0);
+        master.setTooltip ("Master trim on every output. Double-click for 0 dB");
+        addAndMakeVisible (master);
+        clip.setTooltip ("Bends peaks over 0 dB back under it, so many voices into one out can't hard-clip");
+        addAndMakeVisible (clip);
+        setSize (300, 62 + 8 * 18 + 10);
+        startTimerHz (20);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (12, 10);
+        auto row = r.removeFromTop (ps::theme::controlH);
+        clip.setBounds (row.removeFromRight (96));
+        row.removeFromRight (8);
+        master.setBounds (row);
+        r.removeFromTop (10);
+        meters = r;
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace ps::theme;
+        auto r = meters;
+        for (int b = 0; b < ps::Sampler::numBuses; ++b)
+        {
+            auto row = r.removeFromTop (18).toFloat();
+            const bool on = b == 0 || (processor.wrapperType != juce::AudioProcessor::wrapperType_Standalone && b < processor.getBusCount (false)
+                                       && processor.getBus (false, b)->isEnabled());
+            g.setColour (on ? textSoft : textDim);
+            g.setFont (mono (10.0f));
+            g.drawText ("Out " + juce::String (b + 1), row.removeFromLeft (44), juce::Justification::centredLeft);
+            const auto track = row.withSizeKeepingCentre (row.getWidth(), 4.0f);
+            g.setColour (cellOff);
+            g.fillRoundedRectangle (track, 2);
+            const float level = juce::jlimit (0.0f, 1.0f, processor.busLevel (b + 1) * 1.6f);
+            if (level > 0 && on)
+            {
+                const auto fill = track.withWidth (track.getWidth() * level);
+                g.setGradientFill (juce::ColourGradient (cyan.withAlpha (0.5f), fill.getX(), 0, cyan, fill.getRight(), 0, false));
+                g.fillRoundedRectangle (fill, 2);
+            }
+            if (! on && b > 0)
+            {
+                g.setColour (textDim);
+                g.setFont (sans (9.5f));
+                g.drawText (b == 0 ? "" : "off in the host, mixed into Out 1", row, juce::Justification::centredRight);
+            }
+        }
+    }
+
+private:
+    void timerCallback() override { repaint (meters); }
+
+    PatternspaceProcessor& processor;
+    juce::Slider master;
+    juce::ToggleButton clip { "Soft clip" };
+    juce::AudioProcessorValueTreeState::SliderAttachment masterAttachment;
+    juce::AudioProcessorValueTreeState::ButtonAttachment clipAttachment;
+    juce::Rectangle<int> meters;
+};
+
 // ---- the window ------------------------------------------------------------------------------
 
 PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
@@ -632,6 +747,15 @@ PatternspaceEditor::PatternspaceEditor (PatternspaceProcessor& p)
     zoomIn.setTooltip ("Zoom in");
     fitButton.setTooltip ("Fit the tab's modules in view");
     addAndMakeVisible (zoomLabel);
+
+    canvas.loadSample = [this] (const juce::File& f, ps::Sample& s) { return processor.loadSampleFile (f, s); };
+    if (! processor.isMidiEffect())
+    {
+        outButton = std::make_unique<OutputButton> (processor);
+        outButton->setTooltip ("Output: master level, soft clip and a meter per out");
+        outButton->onClick = [this] { showOutputPanel(); };
+        addAndMakeVisible (*outButton);
+    }
 
     if (processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
     {
@@ -722,6 +846,11 @@ void PatternspaceEditor::resized()
     {
         top.removeFromLeft (6);
         midiButton.setBounds (top.removeFromLeft (76));
+    }
+    if (outButton != nullptr)
+    {
+        top.removeFromLeft (6);
+        outButton->setBounds (top.removeFromLeft (60));
     }
 
     if (syncButton.isVisible())
@@ -833,6 +962,15 @@ void PatternspaceEditor::showMidiMenu()
     menu.addSeparator();
     menu.addItem ("Sends the MIDI outs' notes, MIDI clock and start/stop", false, false, nullptr);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&midiButton));
+}
+
+void PatternspaceEditor::showOutputPanel()
+{
+    if (outButton == nullptr)
+        return;
+    auto panel = std::make_unique<OutputPanel> (processor);
+    panel->setLookAndFeel (&look);
+    juce::CallOutBox::launchAsynchronously (std::move (panel), outButton->getScreenBounds(), nullptr);
 }
 
 void PatternspaceEditor::confirmDiscard (const juce::String& action, std::function<void()> go)

@@ -83,6 +83,19 @@ struct Note
     double x = 0, y = 0, w = 0;
 };
 
+// A sound the user loaded into the patch. The audio is kept in memory as mono floats at the file's
+// own rate; short sounds (up to kEmbedSeconds) are embedded in the patch file so it travels, longer
+// ones are reloaded from `path` when the patch opens. A Sample player names one of these by id
+// in Node::sample, or a built-in sound by name (sampleNames()).
+struct Sample
+{
+    std::string id, name, path;
+    double rate = 44100;
+    std::vector<float> data;
+    bool missing = false; // not embedded and the file wasn't found
+};
+constexpr double kEmbedSeconds = 4.0;
+
 struct Graph
 {
     std::vector<Page> pages;
@@ -91,6 +104,7 @@ struct Graph
     std::vector<Block> blocks;
     std::vector<Note> notes;
     std::map<std::string, std::string> tagColours; // patch-wide colour per tag name
+    std::vector<Sample> samples;                   // the user's sounds, on the root graph only
     // Patch-wide settings on the root graph: "follow" (0 phrase, 1 song, 2 free, see
     // Engine::Follow), "seed" (what Probability modules decide from), "rate" (0 a step per
     // sixteenth, 1 per thirty-second, 2 per eighth) and "swing" (50 straight to 75, MPC style).

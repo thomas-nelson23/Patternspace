@@ -173,6 +173,31 @@ namespace
                 put (st, k.c_str(), v);
             put (o, "settings", st);
         }
+        if (root && ! g.samples.empty())
+        {
+            // Short sounds travel inside the file as 16-bit PCM in base64; longer ones keep their
+            // path and are read again when the patch opens.
+            juce::Array<var> samples;
+            for (auto& s : g.samples)
+            {
+                auto so = obj();
+                put (so, "id", str (s.id));
+                put (so, "name", str (s.name));
+                put (so, "path", str (s.path));
+                put (so, "rate", s.rate);
+                put (so, "len", (int) s.data.size());
+                if ((double) s.data.size() <= kEmbedSeconds * s.rate && ! s.data.empty())
+                {
+                    juce::MemoryBlock pcm (s.data.size() * 2);
+                    auto* out = static_cast<juce::int16*> (pcm.getData());
+                    for (size_t i = 0; i < s.data.size(); ++i)
+                        out[i] = (juce::int16) juce::jlimit (-32768, 32767, (int) std::lround (s.data[i] * 32767.0f));
+                    put (so, "data", juce::Base64::toBase64 (pcm.getData(), pcm.getSize()));
+                }
+                samples.add (so);
+            }
+            put (o, "samples", samples);
+        }
         return o;
     }
 
@@ -335,6 +360,30 @@ namespace
             if (auto* st = v["settings"].getDynamicObject())
                 for (auto& p : st->getProperties())
                     g.settings[p.name.toString().toStdString()] = toInt (p.value);
+            if (auto* a = v["samples"].getArray())
+                for (auto& sv : *a)
+                {
+                    Sample s;
+                    s.id = std8 (sv["id"]);
+                    s.name = std8 (sv["name"]);
+                    s.path = std8 (sv["path"]);
+                    s.rate = sv["rate"].isDouble() || sv["rate"].isInt() ? (double) sv["rate"] : 44100.0;
+                    if (s.rate <= 0)
+                        s.rate = 44100;
+                    if (sv["data"].isString())
+                    {
+                        juce::MemoryOutputStream pcm;
+                        if (juce::Base64::convertFromBase64 (pcm, sv["data"].toString()))
+                        {
+                            auto* in = static_cast<const juce::int16*> (pcm.getData());
+                            s.data.resize (pcm.getDataSize() / 2);
+                            for (size_t i = 0; i < s.data.size(); ++i)
+                                s.data[i] = (float) in[i] / 32767.0f;
+                        }
+                    }
+                    if (! s.id.empty())
+                        g.samples.push_back (std::move (s));
+                }
             // Files newer than this build may hold things it doesn't know; they load as far as
             // they can rather than failing. Older files are upgraded by normalise().
             g.settings["_v"] = toInt (v["v"], 1);

@@ -43,7 +43,7 @@ struct StepOutput
     };
     struct Hit
     {
-        int sample; // index into sampleNames()
+        int sample; // index into sampleNames(), then the patch's own samples after them
         int bus;    // audio out 1-8
         bool accent;
         int pitch;  // semitones
@@ -51,6 +51,13 @@ struct StepOutput
         int velocity = kHit;
         int repeats = 1;
         double offset = 0; // in steps
+        int level = 100;   // the Sample player's level, percent
+        int pan = 0;       // -50 left to 50 right
+        int start = 0;     // where playback starts, percent of the sound
+        int cutoff = 100;  // low-pass, 100 is open
+        int choke = 0;     // 1-4: a new hit in the group cuts the others off, 0 none
+        bool mono = false; // a new hit cuts this player's own earlier hits off
+        int owner = 0;     // the Sample player, for mono
     };
     struct Control
     {
