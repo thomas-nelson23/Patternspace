@@ -1,0 +1,249 @@
+{
+  "name": "Macro Breaks",
+  "patch": {
+    "v": 2,
+    "pages": [
+      {
+        "id": "p1",
+        "name": "Main"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "clk",
+        "k": "clock",
+        "x": 14,
+        "y": 250,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {
+          "0": "CLK",
+          "1": "BAR",
+          "2": "2BAR"
+        },
+        "p": {},
+        "pg": "p1"
+      },
+      {
+        "id": "k",
+        "k": "random",
+        "x": 224,
+        "y": 40,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "KICK"
+        },
+        "p": {
+          "len": 16,
+          "density": 4,
+          "seed": 17
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "s",
+        "k": "euclid",
+        "x": 224,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "SNARE"
+        },
+        "p": {
+          "hits": 4,
+          "len": 16,
+          "rot": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "sh",
+        "k": "shift",
+        "x": 434,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "SNARE"
+        },
+        "tagOut": {
+          "0": "GHOST"
+        },
+        "p": {
+          "steps": 3
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "gp",
+        "k": "prob",
+        "x": 644,
+        "y": 220,
+        "c": 0,
+        "tagIn": {
+          "0": "GHOST"
+        },
+        "tagOut": {
+          "0": "GHOSTS"
+        },
+        "p": {
+          "chance": 4
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "h",
+        "k": "euclid",
+        "x": 224,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK",
+          "1": "BAR"
+        },
+        "tagOut": {
+          "0": "HATS"
+        },
+        "p": {
+          "hits": 8,
+          "len": 16,
+          "rot": 0
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "f",
+        "k": "fill",
+        "x": 434,
+        "y": 400,
+        "c": 0,
+        "tagIn": {
+          "0": "CLK"
+        },
+        "tagOut": {
+          "0": "FILL"
+        },
+        "p": {
+          "bars": 4,
+          "dens": 5
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m1",
+        "k": "macro",
+        "x": 14,
+        "y": 420,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "macro": 1,
+          "lo": 2,
+          "hi": 9,
+          "target": "k:density"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m2",
+        "k": "macro",
+        "x": 14,
+        "y": 560,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "macro": 2,
+          "lo": 0,
+          "hi": 10,
+          "target": "f:dens"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m3",
+        "k": "macro",
+        "x": 14,
+        "y": 700,
+        "c": 0,
+        "tagIn": {},
+        "tagOut": {},
+        "p": {
+          "macro": 3,
+          "lo": 0,
+          "hi": 10,
+          "target": "gp:chance"
+        },
+        "pg": "p1"
+      },
+      {
+        "id": "m",
+        "k": "midi",
+        "x": 900,
+        "y": 200,
+        "c": 0,
+        "tagIn": {
+          "0": "KICK",
+          "1": "SNARE",
+          "2": "GHOSTS",
+          "3": "HATS",
+          "4": "FILL"
+        },
+        "tagOut": {},
+        "p": {
+          "ch": 10,
+          "name": "Breaks",
+          "lanes": [
+            {
+              "name": "Kick",
+              "note": 36
+            },
+            {
+              "name": "Snare",
+              "note": 38
+            },
+            {
+              "name": "Ghost",
+              "note": 37
+            },
+            {
+              "name": "Hats",
+              "note": 42
+            },
+            {
+              "name": "Fill",
+              "note": 45
+            }
+          ]
+        },
+        "pg": "p1"
+      }
+    ],
+    "links": [],
+    "blocks": [],
+    "notes": [
+      {
+        "id": "n0",
+        "text": "Macros 1 to 3 (automate them in the DAW, or MIDI-learn a knob) set the kick density, the fill density and how many ghost snares get through.",
+        "x": 224,
+        "y": 580,
+        "w": 220,
+        "pg": "p1"
+      }
+    ],
+    "settings": {
+      "follow": 0,
+      "seed": 1234,
+      "rate": 0,
+      "swing": 50
+    }
+  }
+}

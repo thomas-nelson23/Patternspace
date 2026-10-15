@@ -610,6 +610,9 @@ void PatternspaceProcessor::commitPatch (const juce::String& undoGroup)
     next->setViewPath (viewPath);
     const int version = ++editVersion;
     {
+        // The audio thread waits on this lock only while the new engine copies the old one's
+        // positions: a few integers per module, so microseconds even for a large patch. The old
+        // engine is freed below, on this thread, never on the audio thread.
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (engine)
             next->adoptState (*engine);

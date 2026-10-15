@@ -3,7 +3,9 @@
 ;   iscc /DAppVersion=0.2.0 /DArtefacts=build\Patternspace_artefacts\Release /DOutputDir=dist packaging\windows\Patternspace.iss
 ;
 ; It installs the standalone app into Program Files and the VST3 and CLAP plug-ins into the
-; standard Common Files folders, each a component the user can untick. The installer is unsigned.
+; standard Common Files folders, each a component the user can untick. The installer is unsigned
+; unless ISCC is given a SignTool command (/SSigntool=... and /DSigned=1), as the CI workflow does
+; when the repository has a certificate.
 
 #ifndef AppVersion
   #error Pass /DAppVersion=<version>
@@ -39,6 +41,10 @@ PrivilegesRequired=admin
 ; Closes a running Patternspace app before replacing it.
 CloseApplications=yes
 RestartApplications=no
+#ifdef Signed
+SignTool=Signtool
+SignedUninstaller=yes
+#endif
 
 [Types]
 Name: "full"; Description: "Everything"

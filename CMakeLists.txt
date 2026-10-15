@@ -133,10 +133,13 @@ if(PATTERNSPACE_BUILD_PLUGIN)
     # The standalone app's update check reads GitHub releases over HTTPS, which needs curl on Linux.
     set(PATTERNSPACE_UPDATE_REPO "thomas-nelson23/Patternspace" CACHE STRING "GitHub owner/repo the standalone app checks for releases")
 
-    foreach(target IN LISTS PATTERNSPACE_PLUGIN_TARGETS)
-        target_sources(${target} PRIVATE
+    set(PATTERNSPACE_PLUGIN_SOURCES
             source/plugin/PatchCanvas.cpp
             source/plugin/PatchCanvas.h
+            source/plugin/PatchCanvasDetail.h
+            source/plugin/PatchCanvasItems.cpp
+            source/plugin/PatchCanvasMenus.cpp
+            source/plugin/PatchCanvasPaint.cpp
             source/plugin/PluginEditor.cpp
             source/plugin/PluginEditor.h
             source/plugin/PluginProcessor.cpp
@@ -153,6 +156,9 @@ if(PATTERNSPACE_BUILD_PLUGIN)
             source/state/PatchJson.h
             source/update/UpdateCheck.cpp
             source/update/UpdateCheck.h)
+
+    foreach(target IN LISTS PATTERNSPACE_PLUGIN_TARGETS)
+        target_sources(${target} PRIVATE ${PATTERNSPACE_PLUGIN_SOURCES})
 
         target_compile_definitions(${target} PUBLIC
             PATTERNSPACE_UPDATE_REPO="${PATTERNSPACE_UPDATE_REPO}"
@@ -205,4 +211,32 @@ if(PATTERNSPACE_BUILD_TESTS)
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
     add_test(NAME PatternspaceTests COMMAND PatternspaceTests)
+
+    # The window, headless: every factory patch is laid out, painted and edited through the
+    # editor, so a change to the canvas that crashes or mislays a module fails here. Needs a
+    # display (xvfb-run on Linux); built with the plug-ins, since it compiles their sources.
+    if(PATTERNSPACE_BUILD_PLUGIN)
+        juce_add_console_app(PatternspaceUiTests PRODUCT_NAME "PatternspaceUiTests")
+        target_sources(PatternspaceUiTests PRIVATE tests/UiTests.cpp ${PATTERNSPACE_PLUGIN_SOURCES})
+        target_compile_definitions(PatternspaceUiTests PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+            JUCE_MODAL_LOOPS_PERMITTED=0
+            PATTERNSPACE_MIDI_EFFECT=0
+            PATTERNSPACE_UPDATE_REPO="${PATTERNSPACE_UPDATE_REPO}"
+            PATTERNSPACE_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            JucePlugin_Name="Patternspace"
+            JucePlugin_VersionString="${PROJECT_VERSION}")
+        target_link_libraries(PatternspaceUiTests
+            PRIVATE
+                patternspace_core
+                PatternspacePresets
+                PatternspaceFonts
+                juce::juce_audio_utils
+                juce::juce_gui_basics
+            PUBLIC
+                juce::juce_recommended_config_flags
+                juce::juce_recommended_warning_flags)
+        add_test(NAME PatternspaceUiTests COMMAND PatternspaceUiTests)
+    endif()
 endif()
