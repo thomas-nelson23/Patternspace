@@ -700,6 +700,119 @@ void testVelocityAndShapers()
     }
 }
 
+
+// Control modules put out a value each step and steer a parameter of another module.
+void testControlSignals()
+{
+    ps::Graph g;
+    g.pages = { { "p", "A" } };
+    auto clk = ps::makeNode ("clock", "clk", 0, 0);
+    auto e = ps::makeNode ("euclid", "e", 0, 0);
+    e.set ("hits", 0);
+    auto mac = ps::makeNode ("macro", "mac", 0, 0); // Macro 1 sweeps the Euclidean's hits 0..16
+    mac.set ("macro", 1);
+    mac.target = "e:hits";
+    mac.set ("lo", 0);
+    mac.set ("hi", 16);
+    auto lfo = ps::makeNode ("lfo", "lfo", 0, 0);
+    lfo.set ("period", 4);
+    lfo.mode = "saw";
+    auto cc = ps::makeNode ("cc", "cc", 0, 0);
+    cc.set ("cc", 74);
+    cc.set ("ch", 3);
+    g.nodes = { clk, e, mac, lfo, cc };
+    g.links = { { "clk", 0, "e", 0 }, { "lfo", 0, "cc", 0 } };
+    check (ps::outputType (lfo, 0) == ps::PortType::control, "an LFO's output is a control");
+    check (ps::inputType (cc, 0) == ps::PortType::control, "a CC out takes a control");
+    check (! ps::modulatableParams (e).empty(), "a Euclidean has parameters a control can steer");
+
+    ps::Engine engine;
+    engine.load (g);
+    ps::StepOutput out;
+    int hits = 0;
+    for (int s = 0; s < 16; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        hits += engine.valuesAt ("e") == "1";
+    }
+    checkEq (hits, 0, "with Macro 1 at zero the Euclidean has no hits");
+    engine.setMacro (0, 1.0f);
+    hits = 0;
+    for (int s = 16; s < 32; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        hits += engine.valuesAt ("e") == "1";
+    }
+    checkEq (hits, 16, "at full it has sixteen");
+    engine.setMacro (0, 0.25f);
+    hits = 0;
+    for (int s = 32; s < 48; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        hits += engine.valuesAt ("e") == "1";
+    }
+    checkEq (hits, 4, "a quarter of the way gives four");
+    checkEq (engine.controlAt ("mac"), 250, "the Macro's value is 250 of 1000");
+
+    // The saw LFO climbs over its period and the CC out sends only changes.
+    juce::String ccs;
+    for (int s = 48; s < 56; ++s)
+    {
+        out.clear();
+        engine.step (s, out);
+        for (auto& c : out.controls)
+            ccs += juce::String (c.value) + (c.channel == 3 && c.cc == 74 ? "" : "?") + ",";
+    }
+    checkEq (ccs, juce::String ("0,32,64,95,0,32,64,95,"), "a saw over four steps reaches the CC out on channel 3");
+
+    // Sample & hold with nothing on its input draws a seeded value on each trigger; Random walk
+    // wanders but stays in range; both repeat for the same song position.
+    auto sh = ps::makeNode ("sh", "sh", 0, 0);
+    auto walk = ps::makeNode ("walk", "walk", 0, 0);
+    walk.set ("step", 50);
+    g.nodes = { clk, sh, walk };
+    g.links = { { "clk", 1, "sh", 0 } };
+    juce::String a, b;
+    for (auto* t : { &a, &b })
+    {
+        ps::Engine en;
+        en.load (g);
+        en.setMeter (4, 0);
+        for (int s = 0; s < 12; ++s)
+        {
+            out.clear();
+            en.step (s, out);
+            const int w = en.controlAt ("walk");
+            check (w >= 0 && w <= 1000, "the walk stays within 0 to 1000");
+            *t += juce::String (en.controlAt ("sh")) + ":" + juce::String (w) + ",";
+        }
+    }
+    checkEq (a, b, "control signals repeat for the same song position");
+    check (a.substring (0, a.indexOf (":")) != "0", "sample and hold drew a value on the first bar");
+
+    // MIDI in: a note that arrived fires the matching output on the next step.
+    auto in = ps::makeNode ("midiin", "in", 0, 0);
+    g.nodes = { clk, in };
+    g.links = {};
+    ps::Engine en;
+    en.load (g);
+    en.noteIn (1, 38, 100); // snare, lane 2
+    out.clear();
+    en.step (0, out);
+    checkEq (juce::String (en.valuesAt ("in")), juce::String ("0,1,0,0"), "the snare pad fired its output");
+    out.clear();
+    en.step (1, out);
+    checkEq (juce::String (en.valuesAt ("in")), juce::String ("0,0,0,0"), "and only for that step");
+
+    ps::Graph copy;
+    check (ps::json::fromString (ps::json::toString (g), copy), "control modules save and load");
+    g.nodes = { clk, e, mac };
+    check (ps::json::fromString (ps::json::toString (g), copy) && copy.find ("mac")->target == "e:hits", "with their target");
+}
+
 // The editor draws an open subsystem from the engine's view of the graph inside it.
 void testSubsystemView()
 {
@@ -800,6 +913,7 @@ int main()
     testNewSubsystem();
     testGroupIntoSubsystem();
     testVelocityAndShapers();
+    testControlSignals();
     testUpdateCheck();
 
     std::cout << checks - failures << "/" << checks << " checks passed\n";

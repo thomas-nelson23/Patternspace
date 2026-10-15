@@ -9,14 +9,14 @@ cables or wireless tags, and run it in your DAW or on its own.
 
 | | VST3 | CLAP | AU | LV2 | Standalone |
 |---|---|---|---|---|---|
-| macOS (Apple silicon and Intel) | yes | yes | yes | | yes |
+| macOS (Apple silicon and Intel) | yes | yes | yes, plus an AU MIDI effect | | yes |
 | Windows | yes | yes | | | yes |
 | Linux | yes | yes | | yes | yes |
 
 The plug-in is an instrument with MIDI output:
 
 - **MIDI out** modules send notes to the host's MIDI out, so Patternspace can drive any drum
-  plug-in or hardware. Each MIDI out has 1 to 16 named outputs, each with its own note. Click an
+  plug-in or hardware (see *Routing MIDI in your DAW* below). Each MIDI out has 1 to 16 named outputs, each with its own note. Click an
   output's name for its menu: a note from the General MIDI drum list, its own channel, a choke
   group (an open hat that the closed hat cuts off) and **Audition** to hear it. The module's
   **Length** is the note length in steps and **Nudge** moves its notes early or late.
@@ -40,6 +40,45 @@ The plug-in is an instrument with MIDI output:
   the top bar re-phases every generator by hand.
 - Probability modules decide from the song position, the module and the patch's seed, so the same
   bar always makes the same choices and renders match what you heard.
+- **Control** modules steer parameters. **Macro** follows one of the 16 host-automatable macro
+  knobs (or a MIDI controller: click **Learn** and move it), **LFO** cycles over a number of bars
+  (sine, triangle, saw or square), **Random walk** drifts and **Sample & hold** picks a new value
+  on each trigger. Click **Target...** to choose which module and parameter it drives, and **From
+  / To** for the range. Control ports are diamonds and their cables dotted; they only connect to
+  each other.
+- **MIDI in** turns incoming notes into gates (one output per note, on the channel you choose), so
+  a keyboard or the DAW can trigger patterns, and **CC out** sends a control signal as a MIDI
+  controller. The patch menu's **MIDI input** submenu sets a **reset note** that re-phases every
+  generator and switches **MIDI thru** on to pass incoming MIDI along with the patterns.
+- On macOS there is also **Patternspace MIDI**, an AU MIDI effect for Logic and GarageBand, and
+  the standalone app has a **MIDI** button to pick the device its notes and clock go to.
+
+## Routing MIDI in your DAW
+
+Patternspace is an instrument that outputs MIDI. Most DAWs route one instrument's MIDI output
+into another with a track input setting:
+
+- **Ableton Live**: put Patternspace on a MIDI track. On the drum track, set **MIDI From** to the
+  Patternspace track and the second box to **Patternspace** (not Post Mixer), then set the drum
+  track's monitor to **In**.
+- **Logic Pro / GarageBand**: use **Patternspace MIDI** (the AU MIDI effect) in the drum track's
+  **MIDI FX** slot. Logic doesn't route MIDI between instrument tracks. The regular AU still plays
+  its own sample players.
+- **Bitwig**: drop Patternspace in front of the drum instrument on the same track, or on its own
+  track and set the drum track's input to **Patternspace** under the track inputs. Bitwig's Grid
+  also sees its notes.
+- **Reaper**: on the drum track add a **Receive** from the Patternspace track with the audio
+  channels set to none and the MIDI channels set to all. Or put Patternspace before the drum
+  plug-in in the same FX chain.
+- **FL Studio**: in the Patternspace wrapper settings, set **MIDI output port** to a number, and
+  in the drum plug-in's wrapper settings set **MIDI input port** to the same number.
+- **Cubase / Nuendo**: on the drum track's MIDI input, pick the Patternspace track from the list
+  of plug-in MIDI outputs.
+- **Studio One**: set the drum track's input to the Patternspace instrument from the input menu
+  (plug-in MIDI outputs appear there once the plug-in is loaded).
+
+For hardware, route the DAW track to an external MIDI output, or use the standalone app's
+**MIDI** button, which sends notes plus MIDI clock, start and stop to the chosen device.
 
 ## Installing
 

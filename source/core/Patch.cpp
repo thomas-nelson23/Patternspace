@@ -64,7 +64,7 @@ namespace
         for (auto& n : g.nodes)
         {
             applyDefaults (n);
-            if (n.kind == "midi" && n.lanes.empty())
+            if ((n.kind == "midi" || n.kind == "midiin") && n.lanes.empty())
                 n.lanes.push_back ({ n.name.empty() ? "Note" : n.name, 36 });
             if (n.kind == "sub" && n.inner.empty())
                 n.inner.emplace_back();

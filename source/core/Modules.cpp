@@ -35,6 +35,12 @@ namespace
             { "sample", "Sample player", 0xff2a4f, { "trig" }, { "audio" }, {}, { P::audio }, 160, false },
             { "audio", "Audio out", 0xff2a4f, { "audio" }, {}, { P::audio }, {}, 150, false },
             { "midi", "MIDI out", 0xff2a4f, {}, {}, {}, {}, 170, false },
+            { "cc", "CC out", 0xff2a4f, { "ctl" }, {}, { P::control }, {}, 150, false },
+            { "midiin", "MIDI in", 0x6f858e, {}, {}, {}, {}, 150, false },
+            { "macro", "Macro", 0x9d8cff, {}, { "ctl" }, {}, { P::control }, 160, false },
+            { "lfo", "LFO", 0x9d8cff, { "rst" }, { "ctl" }, {}, { P::control }, 160, false },
+            { "walk", "Random walk", 0x9d8cff, { "rst" }, { "ctl" }, {}, { P::control }, 160, false },
+            { "sh", "Sample & hold", 0x9d8cff, { "trig", "in" }, { "ctl" }, { P::gate, P::control }, { P::control }, 160, false },
             { "sub", "Subsystem", 0xd9eef2, {}, {}, {}, {}, 160, false },
             { "subin", "Inputs", 0x6f858e, {}, {}, {}, {}, 150, false },
             { "subout", "Outputs", 0x6f858e, {}, {}, {}, {}, 150, false },
@@ -88,8 +94,9 @@ const std::vector<LibrarySection>& librarySections()
     static const std::vector<LibrarySection> s {
         { "Generators", { "euclid", "random", "ca", "step", "grids" } },
         { "Shapers", { "accent", "vel", "prob", "combine", "switch", "div", "shift", "ratchet", "fill", "scene" } },
+        { "Control", { "macro", "lfo", "walk", "sh", "midiin" } },
         { "Sound", { "sample", "audio" } },
-        { "Outputs", { "midi" } },
+        { "Outputs", { "midi", "cc" } },
     };
     return s;
 }
@@ -125,6 +132,13 @@ std::vector<std::string> outputsOf (const Node& n)
         return n.outs;
     if (n.kind == "switch")
         return switchPorts (n).outs;
+    if (n.kind == "midiin")
+    {
+        std::vector<std::string> r;
+        for (auto& l : n.lanes)
+            r.push_back (l.name);
+        return r;
+    }
     if (auto* k = kindInfo (n.kind))
         return k->outs;
     return {};
@@ -215,6 +229,44 @@ void applyDefaults (Node& n)
         def ("ofs", 0);
         if (n.name.empty()) n.name = "Drums";
     }
+    else if (k == "midiin") { def ("ch", 0); if (n.name.empty()) n.name = "Pads"; }
+    else if (k == "cc") { def ("cc", 1); def ("ch", 1); }
+    else if (k == "macro") def ("macro", 1);
+    else if (k == "lfo") { def ("period", 16); def ("depth", 100); def ("ofs", 50); if (n.mode.empty()) n.mode = "sine"; }
+    else if (k == "walk") { def ("step", 10); def ("rate", 1); }
+    if (isControlSource (n))
+    {
+        def ("lo", 0);
+        def ("hi", 0);
+    }
+}
+
+bool isControlSource (const Node& n) { return n.kind == "macro" || n.kind == "lfo" || n.kind == "walk" || n.kind == "sh"; }
+
+std::vector<ParamSpec> modulatableParams (const Node& n)
+{
+    static const std::set<std::string> keys { "hits", "rot", "density", "dk", "ds", "dh", "chaos", "div", "every", "chance",
+                                              "vel", "n", "steps", "dens", "scene", "pitch", "decay", "lvl", "soft" };
+    std::vector<ParamSpec> out;
+    if (n.kind == "grids")
+    {
+        out.push_back ({ "mx", "Map X", 0, 100 });
+        out.push_back ({ "my", "Map Y", 0, 100 });
+    }
+    for (auto& spec : paramsOf (n))
+        if (keys.count (spec.key))
+            out.push_back (spec);
+    return out;
+}
+
+bool parseTarget (const std::string& target, std::string& id, std::string& key)
+{
+    const auto colon = target.rfind (':');
+    if (colon == std::string::npos || colon == 0 || colon + 1 >= target.size())
+        return false;
+    id = target.substr (0, colon);
+    key = target.substr (colon + 1);
+    return true;
 }
 
 Node makeNode (const std::string& kind, const std::string& id, double x, double y)
@@ -226,7 +278,7 @@ Node makeNode (const std::string& kind, const std::string& id, double x, double 
     n.y = y;
     if (kind == "step")
         n.cells = { 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0 };
-    if (kind == "midi")
+    if (kind == "midi" || kind == "midiin")
         n.lanes = { { "Kick", 36 }, { "Snare", 38 }, { "Hat", 42 }, { "Open hat", 46 } };
     applyDefaults (n);
     return n;
@@ -265,6 +317,16 @@ std::vector<ParamSpec> paramsOf (const Node& n)
         return { { "pitch", "Pitch", -12, 12 }, { "decay", "Decay", 1, 10, 10, "%" } };
     if (k == "midi")
         return { { "nout", "Outputs", 1, 16 }, { "ch", "Channel", 1, 16 }, { "len", "Length", 1, 32 }, { "ofs", "Nudge", -50, 50, 1, "%" } };
+    if (k == "midiin")
+        return { { "nout", "Outputs", 1, 16 }, { "ch", "Channel", 0, 16 } };
+    if (k == "cc")
+        return { { "cc", "CC", 0, 127 }, { "ch", "Channel", 1, 16 } };
+    if (k == "macro")
+        return { { "macro", "Macro", 1, 16 } };
+    if (k == "lfo")
+        return { { "period", "Period", 1, 256 }, { "depth", "Depth", 0, 100, 1, "%" }, { "ofs", "Offset", 0, 100, 1, "%" } };
+    if (k == "walk")
+        return { { "step", "Step", 1, 50, 1, "%" }, { "rate", "Every", 1, 32 } };
     return {};
 }
 
@@ -277,6 +339,25 @@ bool stepParam (Graph& g, Node& n, const std::string& key, int delta)
             return false;
         resizeLanes (n, c);
         prunePorts (g, n);
+        return true;
+    }
+    if (key == "lo" || key == "hi")
+    {
+        // the target's range, clamped to what the parameter allows
+        std::string id, tkey;
+        int lo = -1000, hi = 1000;
+        if (parseTarget (n.target, id, tkey))
+            if (auto* t = g.find (id))
+                for (auto& spec : modulatableParams (*t))
+                    if (tkey == spec.key)
+                    {
+                        lo = spec.minimum;
+                        hi = spec.maximum;
+                    }
+        const int v = clampInt (n.get (key) + delta, lo, hi);
+        if (v == n.get (key))
+            return false;
+        n.set (key, v);
         return true;
     }
     if (key == "bus" || key == "mx" || key == "my")

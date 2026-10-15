@@ -27,6 +27,32 @@ std::vector<int> euclid (int k, int n, int r)
     return out;
 }
 
+void euclidInto (std::vector<int>& out, int k, int r)
+{
+    const int n = (int) out.size();
+    if (n <= 0)
+        return;
+    k = std::max (0, std::min (k, n));
+    for (int i = 0; i < n; ++i)
+    {
+        const int j = ((i - r) % n + n) % n;
+        out[(size_t) i] = ((j * k) % n) < k ? 1 : 0;
+    }
+}
+
+void randomPatternInto (std::vector<int>& p, int density, int seed)
+{
+    Rng r ((std::uint32_t) (seed != 0 ? seed : 90));
+    bool any = false;
+    for (auto& v : p)
+    {
+        v = r.next() < density / 10.0 ? 1 : 0;
+        any = any || v;
+    }
+    if (density > 0 && ! any && ! p.empty())
+        p[0] = 1;
+}
+
 std::vector<int> randomPattern (int len, int density, int seed)
 {
     len = std::max (1, len);

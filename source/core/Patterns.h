@@ -21,6 +21,9 @@ private:
 
 // Euclidean rhythm: hits spread as evenly as possible over len steps, rotated by rot.
 std::vector<int> euclid (int hits, int len, int rot);
+// The same, written into a pattern that already has the length (no allocation, for the audio thread).
+void euclidInto (std::vector<int>& pattern, int hits, int rot);
+void randomPatternInto (std::vector<int>& pattern, int density, int seed);
 
 // A seeded random loop. Density is 0 to 10 (tenths); a non-zero density always has a hit.
 std::vector<int> randomPattern (int len, int density, int seed);

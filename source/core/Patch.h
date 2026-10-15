@@ -10,8 +10,9 @@ namespace ps
 {
 enum class PortType
 {
-    gate,
-    audio
+    gate,   // a hit with its velocity each step
+    audio,  // a Sample player's sound on its way to an Audio out
+    control // a value from 0 to 1 each step: Macro, LFO, Random walk, Sample & hold
 };
 
 // One output of a MIDI out module: a named note fed by its own input.
@@ -39,7 +40,8 @@ struct Node
     std::string sample;             // Sample player
     std::string name;               // MIDI out and subsystem name
     std::vector<int> cells;         // Step grid
-    std::vector<MidiLane> lanes;    // MIDI out
+    std::vector<MidiLane> lanes;    // MIDI out and MIDI in
+    std::string target;             // a control module's target, "moduleId:paramKey"; its range is num["lo"], num["hi"]
 
     // Port names and types, set only on subsystems and the Inputs and Outputs modules inside them.
     std::vector<std::string> ins, outs;

@@ -21,6 +21,7 @@ mkdir -p "$work/pkgs"
 components=(
   "app|Standalone/Patternspace.app|/Applications|Patternspace app"
   "au|AU/Patternspace.component|/Library/Audio/Plug-Ins/Components|Audio Unit (Logic, GarageBand, Ableton Live)"
+  "aumidi|AU/Patternspace MIDI.component|/Library/Audio/Plug-Ins/Components|Audio Unit MIDI effect (Logic's MIDI FX slot)"
   "vst3|VST3/Patternspace.vst3|/Library/Audio/Plug-Ins/VST3|VST3 plug-in"
   "clap|CLAP/Patternspace.clap|/Library/Audio/Plug-Ins/CLAP|CLAP plug-in (Bitwig, Reaper)"
 )
@@ -28,7 +29,11 @@ components=(
 choices="" outline=""
 for entry in "${components[@]}"; do
   IFS='|' read -r id bundle location title <<<"$entry"
-  [ -d "$artefacts/$bundle" ] || { echo "Missing $artefacts/$bundle" >&2; exit 1; }
+  if [ ! -d "$artefacts/$bundle" ]; then
+    # the MIDI effect is built beside the instrument; a build without it still packages
+    if [ "$id" = "aumidi" ]; then echo "No $bundle, skipping" >&2; continue; fi
+    echo "Missing $artefacts/$bundle" >&2; exit 1
+  fi
 
   root="$work/root-$id"
   mkdir -p "$root"

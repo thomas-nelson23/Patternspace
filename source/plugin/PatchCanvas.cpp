@@ -61,7 +61,8 @@ enum class ItemType
     xy,
     sample,
     switchPos,
-    button
+    button,
+    ctlBar // a control module's value, 0 to 1
 };
 
 struct Item
@@ -82,7 +83,7 @@ juce::String paramValue (const ps::Node& n, const ps::ParamSpec& spec)
     return juce::String (v) + spec.suffix;
 }
 
-std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const std::map<std::string, int>& patchSettings)
+std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const std::map<std::string, int>& patchSettings, const ps::Graph& level)
 {
     std::vector<Item> items;
     auto settings = [&patchSettings] (const char* key) {
@@ -177,6 +178,39 @@ std::vector<Item> bodyItems (const ps::Node& n, float x, float y, float w, const
     {
         steppers();
         add (ItemType::text, 12, {}, "To the host's MIDI out");
+    }
+    else if (k == "midiin")
+    {
+        steppers();
+        add (ItemType::text, 12, {}, n.get ("ch") ? "Notes on channel " + juce::String (n.get ("ch")) : juce::String ("Notes on any channel"));
+    }
+    else if (k == "cc")
+    {
+        steppers();
+        add (ItemType::text, 12, {}, "Sends the value as it changes");
+    }
+    else if (ps::isControlSource (n))
+    {
+        if (k == "lfo")
+            add (ItemType::modes, 18, "shape");
+        if (k == "macro")
+            add (ItemType::button, 18, "learn", "MIDI CC");
+        steppers();
+        add (ItemType::ctlBar, 8, "ctl");
+        // The target: a module on this level and one of its parameters, with the range swept.
+        juce::String target = "Target...";
+        std::string id, key;
+        if (ps::parseTarget (n.target, id, key))
+            if (auto* t = level.find (id))
+                for (auto& spec : ps::modulatableParams (*t))
+                    if (key == spec.key)
+                        target = juce::String::fromUTF8 ("\xE2\x86\x92 ") + u8 (ps::titleOf (*t)) + " \xC2\xB7 " + spec.label;
+        add (ItemType::button, 18, "target", target);
+        if (target != "Target...")
+        {
+            add (ItemType::stepper, stepperH, "lo", "From", juce::String (n.get ("lo")));
+            add (ItemType::stepper, stepperH, "hi", "To", juce::String (n.get ("hi")));
+        }
     }
     else if (k == "sub")
     {
@@ -421,6 +455,7 @@ void PatchCanvas::showPortMenu (int index, int port)
     };
     menu.addItem ("Gate", true, type == ps::PortType::gate, [setType] { setType (ps::PortType::gate); });
     menu.addItem ("Audio", true, type == ps::PortType::audio, [setType] { setType (ps::PortType::audio); });
+    menu.addItem ("Control", true, type == ps::PortType::control, [setType] { setType (ps::PortType::control); });
     menu.addSeparator();
     menu.addItem (output ? "Remove output" : "Remove input", [this, output, port] {
         ps::Graph* parent = nullptr;
@@ -598,7 +633,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
     }
     const int rows = (int) std::max (ins.size(), outs.size());
     L.bodyTop = rows > 0 ? ioTop + rows * rowH + 4 : headerH + 6;
-    const auto items = bodyItems (n, x, y + L.bodyTop, w, processor.patch().settings);
+    const auto items = bodyItems (n, x, y + L.bodyTop, w, processor.patch().settings, graph());
     float bottom = y + L.bodyTop;
     for (auto& it : items)
     {
@@ -625,7 +660,7 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 break;
             case ItemType::modes:
             {
-                const int count = it.key == "combine" ? (int) ps::combineModes().size() : it.key == "follow" || it.key == "rate" ? 3 : 2;
+                const int count = it.key == "combine" ? (int) ps::combineModes().size() : it.key == "shape" ? 4 : it.key == "follow" || it.key == "rate" ? 3 : 2;
                 for (int m = 0; m < count; ++m)
                     L.zones.push_back ({ { it.r.getX() + it.r.getWidth() * m / count, it.r.getY(), it.r.getWidth() / count, it.r.getHeight() }, ZoneType::mode, it.key, m });
                 break;
@@ -642,17 +677,25 @@ PatchCanvas::Layout PatchCanvas::layoutOf (const ps::Node& n) const
                 L.zones.push_back ({ it.r.withTrimmedLeft (it.r.getWidth() / 2), ZoneType::sample, {}, 1 });
                 break;
             case ItemType::button:
-                L.zones.push_back ({ it.r, it.key == "open" ? ZoneType::open : it.key == "reroll" ? ZoneType::reroll : ZoneType::addPort, {}, 0 });
+                L.zones.push_back ({ it.r,
+                                     it.key == "open"     ? ZoneType::open
+                                     : it.key == "reroll" ? ZoneType::reroll
+                                     : it.key == "learn"  ? ZoneType::learn
+                                     : it.key == "target" ? ZoneType::target
+                                                          : ZoneType::addPort,
+                                     {},
+                                     0 });
                 break;
             case ItemType::text:
             case ItemType::bigText:
             case ItemType::drumRows:
             case ItemType::meter:
             case ItemType::switchPos:
+            case ItemType::ctlBar:
                 break;
         }
     }
-    if (n.kind == "midi")
+    if (n.kind == "midi" || n.kind == "midiin")
         for (int q = 0; q < (int) n.lanes.size(); ++q)
         {
             const float ry = y + ioTop + q * rowH;
@@ -891,6 +934,7 @@ void PatchCanvas::paintHelp (juce::Graphics& g)
         { "Drag output to input", "Wire. Drag a wired input to move or remove the wire" },
         { "Click a port", "Tag it: pick a tag, colour it, see who listens" },
         { "Click a MIDI output's name", "Its menu: note, channel, choke group, audition" },
+        { "Target... on a control", "Pick the module and parameter a Macro, LFO, walk or S&H steers" },
         { "Double-click empty space", "Write a note. Right-click for a block" },
         { "Ctrl/Cmd G, B", "Group the selection into a subsystem; draw a block around it" },
         { "M", "Minimap on or off. Click it to move around" },
@@ -998,17 +1042,20 @@ void PatchCanvas::paintWires (juce::Graphics& g)
         const auto La = layoutOf (a), Lb = layoutOf (b);
         if (link.p >= (int) La.outs.size() || link.q >= (int) Lb.ins.size())
             continue;
-        const bool audio = ps::outputType (a, link.p) == ps::PortType::audio;
+        const auto type = ps::outputType (a, link.p);
+        const bool audio = type == ps::PortType::audio, control = type == ps::PortType::control;
         const bool reset = ps::inputsOf (b)[(size_t) link.q] == "rst";
-        const bool lit = viewOut (ia, link.p) > 0 && ! (a.kind == "clock" && link.p == 0);
+        const bool lit = ! control && viewOut (ia, link.p) > 0 && ! (a.kind == "clock" && link.p == 0);
         auto path = wirePath (La.outs[(size_t) link.p], Lb.ins[(size_t) link.q]);
-        const float width = (audio ? 4.0f : 2.2f) + (lit ? 1.4f : 0.0f);
-        g.setColour (l == selectedWire ? ps::theme::textBright : kindColour (a).withAlpha (lit ? 1.0f : (audio ? 0.55f : 0.6f)));
-        if (reset)
+        const float width = (audio ? 4.0f : control ? 1.8f : 2.2f) + (lit ? 1.4f : 0.0f);
+        g.setColour (l == selectedWire ? ps::theme::textBright : kindColour (a).withAlpha (lit ? 1.0f : (audio ? 0.55f : control ? 0.8f : 0.6f)));
+        if (reset || control)
         {
+            // reset wires are dashed, control wires dotted
             juce::Path dashed;
             const float dashes[] = { 5.0f, 4.0f };
-            juce::PathStrokeType (width).createDashedStroke (dashed, path, dashes, 2);
+            const float dots[] = { 2.0f, 3.0f };
+            juce::PathStrokeType (width).createDashedStroke (dashed, path, control ? dots : dashes, 2);
             g.fillPath (dashed);
         }
         else
@@ -1117,11 +1164,11 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
         g.drawText (sub, juce::Rectangle<float> (h.getRight() - 7 - subW, cy - 8, subW, 16), juce::Justification::centredRight, true);
     }
 
-    // port labels (MIDI outs show each output's name and note instead)
+    // port labels (MIDI outs and ins show each output's name and note instead)
     if (! n.collapsed)
     {
         g.setFont (mono (10.0f));
-        if (n.kind == "midi")
+        if (n.kind == "midi" || n.kind == "midiin")
         {
             for (int q = 0; q < (int) n.lanes.size(); ++q)
             {
@@ -1134,8 +1181,9 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
                 g.drawText (juce::String::fromUTF8 ("\xE2\x80\xBA"), juce::Rectangle<float> (L.box.getRight() - 26, ry, 14, rowH), juce::Justification::centred);
                 g.setColour (c);
                 g.drawText (u8 (ps::noteName (lane.note)), juce::Rectangle<float> (L.box.getRight() - 50, ry, 24, rowH), juce::Justification::centred);
-                const int v = viewIn (index, q);
-                drawLed (g, { L.box.getRight() - 8, ry + rowH / 2 }, ps::isAccent (v) ? textBright : c, v > 0);
+                const int v = n.kind == "midiin" ? viewOut (index, q) : viewIn (index, q);
+                if (n.kind == "midi")
+                    drawLed (g, { L.box.getRight() - 8, ry + rowH / 2 }, ps::isAccent (v) ? textBright : c, v > 0);
             }
         }
         else
@@ -1161,24 +1209,32 @@ void PatchCanvas::paintNode (juce::Graphics& g, int index, const ps::Node& n, co
         const auto& pts = dir == 0 ? L.ins : L.outs;
         for (int i = 0; i < (int) pts.size(); ++i)
         {
-            const bool audio = dir == 0 ? ps::inputType (n, i) == ps::PortType::audio : ps::outputType (n, i) == ps::PortType::audio;
+            const auto type = dir == 0 ? ps::inputType (n, i) : ps::outputType (n, i);
+            const bool audio = type == ps::PortType::audio, control = type == ps::PortType::control;
             const int v = dir == 0 ? viewIn (index, i) : viewOut (index, i);
-            const bool lit = v > 0 && ! (n.kind == "clock" && dir == 1 && i == 0) && ! audio;
-            const bool target = wiring && (dir == 0) == fromOut && index != pressed.node
-                                && (audio ? ps::PortType::audio : ps::PortType::gate) == wireType;
+            const bool lit = v > 0 && ! (n.kind == "clock" && dir == 1 && i == 0) && ! audio && ! control;
+            const bool target = wiring && (dir == 0) == fromOut && index != pressed.node && type == wireType;
             const auto r = juce::Rectangle<float> (10, 10).withCentre (pts[(size_t) i]).expanded (target ? 2.0f : 0.0f);
             if (wiring && ! target)
                 g.setOpacity (0.35f);
             else
                 g.setOpacity (1.0f);
+            // gates are rings, audio ports squares, controls diamonds
+            juce::Path diamond;
+            if (control)
+                diamond.addQuadrilateral (r.getCentreX(), r.getY() - 1, r.getRight() + 1, r.getCentreY(), r.getCentreX(), r.getBottom() + 1, r.getX() - 1, r.getCentreY());
             g.setColour (panelBottom);
             if (audio)
                 g.fillRect (r);
+            else if (control)
+                g.fillPath (diamond);
             else
                 g.fillEllipse (r);
             g.setColour (lit ? textBright : c);
             if (audio)
                 g.drawRect (r, 2.0f);
+            else if (control)
+                g.strokePath (diamond, juce::PathStrokeType (1.8f));
             else
                 g.drawEllipse (r.reduced (1), 2.0f);
             if (lit)
@@ -1221,7 +1277,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
     using namespace ps::theme;
     const auto c = kindColour (n);
     const ps::Engine::View* v = viewValid && index < (int) view.size() ? &view[(size_t) index] : nullptr;
-    for (auto& it : bodyItems (n, L.box.getX(), L.box.getY() + L.bodyTop, L.box.getWidth(), processor.patch().settings))
+    for (auto& it : bodyItems (n, L.box.getX(), L.box.getY() + L.bodyTop, L.box.getWidth(), processor.patch().settings, graph()))
     {
         const auto r = it.r;
         switch (it.type)
@@ -1275,9 +1331,11 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
             }
             case ItemType::modes:
             {
-                const bool combine = it.key == "combine", follow = it.key == "follow", rate = it.key == "rate", order = it.key == "order";
+                const bool combine = it.key == "combine", follow = it.key == "follow", rate = it.key == "rate", order = it.key == "order", shape = it.key == "shape";
                 const auto& modes = ps::combineModes();
-                const int count = combine ? (int) modes.size() : follow || rate ? 3 : 2;
+                const int count = combine ? (int) modes.size() : shape ? 4 : follow || rate ? 3 : 2;
+                static const char* shapeNames[] = { "Sine", "Tri", "Saw", "Square" };
+                static const char* shapeModes[] = { "sine", "tri", "saw", "square" };
                 const int ways = n.get ("ways", 4);
                 const int followNow = settingOf ("follow");
                 const int rateNow = juce::jlimit (0, 2, settingOf ("rate"));
@@ -1291,6 +1349,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                                   : follow  ? m == followNow
                                   : rate    ? m == rateNow
                                   : order   ? m == (n.get ("rnd") ? 1 : 0)
+                                  : shape   ? n.mode == shapeModes[m]
                                             : (m == 0) == (n.mode != "merge");
                     paintSegment (g, b, on, c);
                     g.setColour (on ? onAccent : textSoft);
@@ -1300,6 +1359,7 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                                        : follow  ? juce::String (followNames[m])
                                        : rate    ? juce::String (rateNames[m])
                                        : order   ? juce::String (orderNames[m])
+                                       : shape   ? juce::String (shapeNames[m])
                                                  : (m == 0 ? "1" + arrow + juce::String (ways) : juce::String (ways) + arrow + "1");
                     g.drawText (caption, b, juce::Justification::centred);
                 }
@@ -1363,13 +1423,39 @@ void PatchCanvas::paintBody (juce::Graphics& g, int index, const ps::Node& n, co
                 break;
             }
             case ItemType::button:
-                // A hairline pill.
-                g.setColour (pillEdge);
+            {
+                // A hairline pill. A Macro's CC button shows the controller it follows, or that it
+                // is waiting for one to move.
+                auto label = it.text;
+                bool hot = false;
+                if (it.key == "learn")
+                {
+                    const int macro = juce::jlimit (0, ps::Engine::numMacros - 1, n.get ("macro", 1) - 1);
+                    hot = processor.isLearningMacro (macro);
+                    const int cc = processor.macroCc (macro);
+                    label = hot ? "Move a controller..." : cc >= 0 ? "MIDI CC " + juce::String (cc) + "  \xC2\xB7  Learn" : "Learn MIDI CC";
+                }
+                g.setColour (hot ? c : pillEdge);
                 g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() / 2, 1);
-                g.setColour (textSoft);
+                g.setColour (hot ? c : textSoft);
                 g.setFont (sans (10.5f));
-                g.drawText (it.text, r, juce::Justification::centred, false);
+                g.drawText (label, r, juce::Justification::centred, true);
                 break;
+            }
+            case ItemType::ctlBar:
+            {
+                // the control's value now, on a track like the audio meter's
+                const auto track = r.withSizeKeepingCentre (r.getWidth(), 4.0f);
+                g.setColour (cellOff);
+                g.fillRoundedRectangle (track, 2);
+                const float level = juce::jlimit (0.0f, 1.0f, (float) viewOut (index, 0) / 1000.0f);
+                if (level > 0.0f)
+                {
+                    g.setColour (c);
+                    g.fillRoundedRectangle (track.withWidth (std::max (3.0f, track.getWidth() * level)), 2);
+                }
+                break;
+            }
             case ItemType::sample:
             {
                 g.setColour (bg);
@@ -2182,6 +2268,13 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
                 n.set ("rnd", z.value);
                 break;
             }
+            if (z.key == "shape")
+            {
+                static const char* shapes[] = { "sine", "tri", "saw", "square" };
+                changed = n.mode != shapes[juce::jlimit (0, 3, z.value)];
+                n.mode = shapes[juce::jlimit (0, 3, z.value)];
+                break;
+            }
             if (z.key == "combine")
                 n.mode = ps::combineModes()[(size_t) z.value];
             else
@@ -2204,6 +2297,25 @@ void PatchCanvas::applyZone (int index, const Zone& z, juce::Point<float> world)
             break;
         case ZoneType::lane:
             showLaneMenu (index, z.value);
+            break;
+        case ZoneType::learn:
+        {
+            const int macro = juce::jlimit (0, ps::Engine::numMacros - 1, n.get ("macro", 1) - 1);
+            if (processor.isLearningMacro (macro))
+            {
+                processor.learnMacroCc (-1);
+                showMessage ("Stopped listening");
+            }
+            else
+            {
+                processor.learnMacroCc (macro);
+                showMessage ("Move a knob or fader on your controller: the next MIDI CC received drives Macro " + juce::String (macro + 1)
+                             + ". Click again to stop.", 8000);
+            }
+            break;
+        }
+        case ZoneType::target:
+            showTargetMenu (index);
             break;
         case ZoneType::sample:
         {
@@ -2370,7 +2482,7 @@ void PatchCanvas::connect (int fromNode, int fromPort, int toNode, int toPort)
         return;
     if (ps::outputType (a, fromPort) != ps::inputType (b, toPort))
     {
-        showMessage ("Audio ports only connect to audio ports");
+        showMessage ("A port only connects to its own kind: gate to gate (rings), audio to audio (squares), control to control (diamonds)");
         return;
     }
     // An input takes one wire: a new one replaces the old.
@@ -3594,6 +3706,57 @@ void PatchCanvas::paintKindGlyph (juce::Graphics& g, const std::string& k, juce:
         for (int i = 0; i < 3; ++i)
             g.drawRect (juce::Rectangle<float> (4.0f, 4.0f).withCentre (c.translated ((float) i * 4.5f - 4.5f, 0)), i == 1 ? 2.0f : 0.8f);
     }
+    else if (k == "macro")
+    {
+        // a knob: a ring with its pointer
+        g.drawEllipse (juce::Rectangle<float> (10, 10).withCentre (c), 1.3f);
+        p.startNewSubPath (c);
+        p.lineTo (c.translated (-3.0f, -3.5f));
+        g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    else if (k == "lfo")
+    {
+        p.startNewSubPath (c.translated (-5.5f, 0));
+        p.cubicTo (c.translated (-4, -6), c.translated (-1.5f, -6), c.translated (0, 0));
+        p.cubicTo (c.translated (1.5f, 6), c.translated (4, 6), c.translated (5.5f, 0));
+        g.strokePath (p, thin);
+    }
+    else if (k == "walk")
+    {
+        p.startNewSubPath (c.translated (-5.5f, 2));
+        const float ys[] = { -3, 1, -4, 3, -1, 2 };
+        for (int i = 0; i < 6; ++i)
+            p.lineTo (c.translated (-5.5f + 2.0f * (float) (i + 1), ys[i]));
+        g.strokePath (p, thin);
+    }
+    else if (k == "sh")
+    {
+        // steps: a value held, then another
+        p.startNewSubPath (c.translated (-5.5f, 3));
+        p.lineTo (c.translated (-2, 3));
+        p.lineTo (c.translated (-2, -4));
+        p.lineTo (c.translated (2, -4));
+        p.lineTo (c.translated (2, 0));
+        p.lineTo (c.translated (5.5f, 0));
+        g.strokePath (p, thin);
+    }
+    else if (k == "cc")
+    {
+        // a dial's arc with its pointer
+        p.addCentredArc (c.x, c.y + 1, 5, 5, 0, -2.4f, 2.4f, true);
+        g.strokePath (p, thin);
+        g.fillEllipse (juce::Rectangle<float> (2.6f, 2.6f).withCentre (c.translated (0, 1)));
+    }
+    else if (k == "midiin")
+    {
+        g.drawEllipse (juce::Rectangle<float> (10.5f, 10.5f).withCentre (c), 1.1f);
+        p.startNewSubPath (c.translated (-2.5f, 0));
+        p.lineTo (c.translated (2.5f, 0));
+        p.startNewSubPath (c.translated (0.5f, -2.2f));
+        p.lineTo (c.translated (2.7f, 0));
+        p.lineTo (c.translated (0.5f, 2.2f));
+        g.strokePath (p, thin);
+    }
     else if (k == "subin" || k == "subout")
     {
         const float dir = k == "subin" ? 1.0f : 1.0f;
@@ -3617,7 +3780,7 @@ void PatchCanvas::showLaneMenu (int index, int lane)
     if (index < 0 || index >= (int) patch.nodes.size())
         return;
     const auto& n = patch.nodes[(size_t) index];
-    if (n.kind != "midi" || lane < 0 || lane >= (int) n.lanes.size())
+    if ((n.kind != "midi" && n.kind != "midiin") || lane < 0 || lane >= (int) n.lanes.size())
         return;
     const auto id = n.id;
     const auto current = n.lanes[(size_t) lane];
@@ -3634,10 +3797,12 @@ void PatchCanvas::showLaneMenu (int index, int lane)
         };
     };
     juce::PopupMenu menu, notes, channels, chokes;
+    const bool input = n.kind == "midiin";
     menu.addSectionHeader (u8 (current.name) + "  " + u8 (ps::noteName (current.note)));
-    menu.addItem ("Audition", [this, current, moduleChannel] {
-        processor.audition (current.channel > 0 ? current.channel : moduleChannel, current.note);
-    });
+    if (! input)
+        menu.addItem ("Audition", [this, current, moduleChannel] {
+            processor.audition (current.channel > 0 ? current.channel : moduleChannel, current.note);
+        });
     menu.addItem ("Rename...", [this, index, lane] {
         const auto& m = graph().nodes[(size_t) index];
         tagNode = m.id;
@@ -3664,14 +3829,17 @@ void PatchCanvas::showLaneMenu (int index, int lane)
         tagEditor->setJustification (juce::Justification::centred);
     });
     menu.addSubMenu ("Note", notes);
-    channels.addItem ("Module's (" + juce::String (moduleChannel) + ")", true, current.channel == 0, with ([] (ps::MidiLane& l) { l.channel = 0; }));
-    for (int ch = 1; ch <= 16; ++ch)
-        channels.addItem (juce::String (ch), true, current.channel == ch, with ([ch] (ps::MidiLane& l) { l.channel = ch; }));
-    menu.addSubMenu ("Channel", channels);
-    chokes.addItem ("None", true, current.choke == 0, with ([] (ps::MidiLane& l) { l.choke = 0; }));
-    for (int grp = 1; grp <= 4; ++grp)
-        chokes.addItem ("Group " + juce::String (grp), true, current.choke == grp, with ([grp] (ps::MidiLane& l) { l.choke = grp; }));
-    menu.addSubMenu ("Choke group", chokes);
+    if (! input)
+    {
+        channels.addItem ("Module's (" + juce::String (moduleChannel) + ")", true, current.channel == 0, with ([] (ps::MidiLane& l) { l.channel = 0; }));
+        for (int ch = 1; ch <= 16; ++ch)
+            channels.addItem (juce::String (ch), true, current.channel == ch, with ([ch] (ps::MidiLane& l) { l.channel = ch; }));
+        menu.addSubMenu ("Channel", channels);
+        chokes.addItem ("None", true, current.choke == 0, with ([] (ps::MidiLane& l) { l.choke = 0; }));
+        for (int grp = 1; grp <= 4; ++grp)
+            chokes.addItem ("Group " + juce::String (grp), true, current.choke == grp, with ([grp] (ps::MidiLane& l) { l.choke = grp; }));
+        menu.addSubMenu ("Choke group", chokes);
+    }
     menu.addSeparator();
     menu.addItem ("Remove output", (int) n.lanes.size() > 1, false, [this, id, lane] {
         auto& p = graph();
@@ -3698,6 +3866,57 @@ void PatchCanvas::showLaneMenu (int index, int lane)
                 m->lanes.erase (m->lanes.begin() + lane);
                 edited();
             }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
+}
+
+// ---- control targets -------------------------------------------------------------------------
+
+void PatchCanvas::showTargetMenu (int index)
+{
+    auto& patch = graph();
+    if (index < 0 || index >= (int) patch.nodes.size())
+        return;
+    const auto& n = patch.nodes[(size_t) index];
+    const auto id = n.id;
+    std::string currentId, currentKey;
+    ps::parseTarget (n.target, currentId, currentKey);
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Steer");
+    int offered = 0;
+    for (auto& m : patch.nodes)
+    {
+        if (m.id == id || ! onPage (m))
+            continue;
+        const auto params = ps::modulatableParams (m);
+        if (params.empty())
+            continue;
+        juce::PopupMenu sub;
+        for (auto& spec : params)
+            sub.addItem (juce::String (spec.label) + "  " + juce::String (spec.minimum) + " to " + juce::String (spec.maximum), true,
+                         m.id == currentId && spec.key == currentKey,
+                         [this, id, target = m.id + ":" + spec.key, lo = spec.minimum, hi = spec.maximum] {
+                             if (auto* c = graph().find (id))
+                             {
+                                 c->target = target;
+                                 c->set ("lo", lo);
+                                 c->set ("hi", hi);
+                                 edited();
+                                 showMessage ("From and To set the range swept as the control goes from 0 to 1; swap them to run it backwards");
+                             }
+                         });
+        menu.addSubMenu (u8 (ps::titleOf (m)), sub);
+        ++offered;
+    }
+    if (offered == 0)
+        menu.addItem ("No module on this tab has a parameter to steer", false, false, nullptr);
+    menu.addSeparator();
+    menu.addItem ("No target", true, n.target.empty(), [this, id] {
+        if (auto* c = graph().find (id))
+        {
+            c->target.clear();
+            edited();
+        }
     });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
