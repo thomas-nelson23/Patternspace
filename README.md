@@ -157,13 +157,8 @@ in its `Standalone` folder. The plug-ins don't check for updates themselves.
 
 To publish a release, bump `VERSION` in `project(Patternspace ...)` in `CMakeLists.txt`, turn the
 **Unreleased** section of `CHANGELOG.md` into a section for that version (it becomes the release
-notes), merge it, then push a matching tag:
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The Build workflow builds all three platforms and publishes the release with
+notes), and merge it. The Build workflow sees a version on `main` that has no release yet, tags
+the merged commit `v<version>`, builds all three platforms and publishes the release with
 `Patternspace-<version>-macOS.pkg`, `Patternspace-<version>-Windows-Setup.exe`,
 `patternspace_<version>_amd64.deb`, and a zip per platform. It stops if the tag and the
 version don't match, since the app compares its own version with the tag.
